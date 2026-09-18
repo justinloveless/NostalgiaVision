@@ -1,0 +1,55 @@
+name: NostalgiaVision
+options:
+  bundleIdPrefix: com.nostalgiavision
+  deploymentTarget:
+    tvOS: "17.0"
+targets:
+  NostalgiaVision:
+    type: application
+    platform: tvOS
+    sources:
+      - Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nostalgiavision.app
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        SWIFT_VERSION: "5.0"
+  NostalgiaVisionTests:
+    type: bundle.unit-test
+    platform: tvOS
+    sources:
+      - Tests
+    dependencies:
+      - target: NostalgiaVision
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nostalgiavision.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+  NostalgiaVisionUITests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources:
+      - UITemp
+    dependencies:
+      - target: NostalgiaVision
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nostalgiavision.app.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+schemes:
+  NostalgiaVision:
+    build:
+      targets:
+        NostalgiaVision: all
+        NostalgiaVisionTests: [test]
+        NostalgiaVisionUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - NostalgiaVisionTests
+        - NostalgiaVisionUITests
