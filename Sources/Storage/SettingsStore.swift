@@ -35,6 +35,7 @@ final class SettingsStore {
         static let chromaticAberration = "nostalgiavision.fx.chromaticAberration"
         static let glowBloom = "nostalgiavision.fx.glowBloom"
         static let signalNoise = "nostalgiavision.fx.signalNoise"
+        static let bevel = "nostalgiavision.fx.bevel"
     }
 
     private let defaults: UserDefaults
@@ -58,7 +59,8 @@ final class SettingsStore {
                 curvature: effect(forKey: Key.curvature),
                 chromaticAberration: effect(forKey: Key.chromaticAberration),
                 glowBloom: effect(forKey: Key.glowBloom),
-                signalNoise: effect(forKey: Key.signalNoise)
+                signalNoise: effect(forKey: Key.signalNoise),
+                bevel: effect(forKey: Key.bevel)
             )
             return PersistedState(
                 settings: settings,
@@ -92,6 +94,7 @@ final class SettingsStore {
             )
             write(newValue.pictureEffects.glowBloom, forKey: Key.glowBloom, was: current.pictureEffects.glowBloom)
             write(newValue.pictureEffects.signalNoise, forKey: Key.signalNoise, was: current.pictureEffects.signalNoise)
+            write(newValue.pictureEffects.bevel, forKey: Key.bevel, was: current.pictureEffects.bevel)
         }
     }
 

@@ -52,6 +52,7 @@ enum PictureEffectKind: String, CaseIterable, Equatable, Sendable {
     case chromaticAberration
     case glowBloom
     case signalNoise
+    case bevel
 
     var title: String {
         switch self {
@@ -61,6 +62,7 @@ enum PictureEffectKind: String, CaseIterable, Equatable, Sendable {
         case .chromaticAberration: return "CHROMA"
         case .glowBloom: return "GLOW"
         case .signalNoise: return "NOISE"
+        case .bevel: return "BEVEL"
         }
     }
 }
@@ -82,7 +84,7 @@ struct PictureEffect: Equatable, Codable, Sendable {
     }
 }
 
-/// The six CRT post-processing knobs. Defaults are all off so upgrading changes nothing for a
+/// The seven CRT post-processing knobs. Defaults are all off so upgrading changes nothing for a
 /// viewer who never opens the new settings.
 struct PictureEffects: Equatable, Codable, Sendable {
     var vignette: PictureEffect
@@ -91,6 +93,7 @@ struct PictureEffects: Equatable, Codable, Sendable {
     var chromaticAberration: PictureEffect
     var glowBloom: PictureEffect
     var signalNoise: PictureEffect
+    var bevel: PictureEffect
 
     static let off = PictureEffects(
         vignette: .off,
@@ -98,7 +101,8 @@ struct PictureEffects: Equatable, Codable, Sendable {
         curvature: .off,
         chromaticAberration: .off,
         glowBloom: .off,
-        signalNoise: .off
+        signalNoise: .off,
+        bevel: .off
     )
 
     subscript(_ kind: PictureEffectKind) -> PictureEffect {
@@ -110,6 +114,7 @@ struct PictureEffects: Equatable, Codable, Sendable {
             case .chromaticAberration: return chromaticAberration
             case .glowBloom: return glowBloom
             case .signalNoise: return signalNoise
+            case .bevel: return bevel
             }
         }
         set {
@@ -120,6 +125,7 @@ struct PictureEffects: Equatable, Codable, Sendable {
             case .chromaticAberration: chromaticAberration = newValue
             case .glowBloom: glowBloom = newValue
             case .signalNoise: signalNoise = newValue
+            case .bevel: bevel = newValue
             }
         }
     }

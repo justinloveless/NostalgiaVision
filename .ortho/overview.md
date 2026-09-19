@@ -1,42 +1,61 @@
-# ORT-299: Curved-glass screen curvature effect
+# ORT-300: Bevel — an old-TV cabinet frame around the picture
 
 ## Task
-The CRT "CURVE" picture effect (`Sources/UI/PictureEffectsStage.swift`) looked like a rounded-corner
-crop, not curved glass. Make the edges actually read as a curved screen.
+Add a seventh CRT picture-FX knob, "bevel": an opaque old-TV cabinet painted over the outer band
+of the screen, with a transparent cutout in the middle so the actual picture reads as something
+being watched *through* an old television rather than a rectangle with filters on it.
 
 ## State: done, ready for review
 
 ## What changed
-`CurvatureMaskOverlay` in `Sources/UI/PictureEffectsStage.swift` now clips to a pillow/cushion-shaped
-path instead of a rounded rect: each edge is a quadratic Bezier that bows inward at its midpoint (not
-just the corners), which is the classic silhouette of an old curved CRT tube. Two supporting touches
-sell the glass: a blurred dark rim right at the boundary (the glass reads thickest there, same as light
-grazing a curved surface) and a soft specular band across the upper rim (light catching glass). All three
-scale with the existing `curvature` amount knob, so `OFF`/`25%`/`50%`/`75%`/`100%` still behaves the
-same as before, just with a convincing shape at each step.
+- `Sources/Domain/PictureEffects.swift` — new `PictureEffectKind.bevel` case (title `"BEVEL"`), new
+  `PictureEffects.bevel` field, wired into `.off` and the by-kind subscript. Steps OFF → 25% → 50%
+  → 75% → 100% exactly like the other six knobs; the settings screen's `ForEach(allCases)` row
+  picked it up with no UI changes needed.
+- `Sources/Storage/SettingsStore.swift` — new `nostalgiavision.fx.bevel` UserDefaults key, read and
+  written the same way as the other five FX keys.
+- `Sources/UI/PictureEffectsStage.swift` — new `BevelOverlay`, rendered topmost (after
+  `CurvatureMaskOverlay`) since the cabinet is the outermost physical object. It fills the full
+  canvas minus a cushion-shaped cutout (`eoFill`) with a wood-cabinet gradient, darkens the cutout's
+  inner lip, and fades in a speaker grille + two control knobs (sized off the frame's own apron, not
+  absolute points) as the knob strength increases. `CurvatureMaskOverlay`'s cushion-path math was
+  extracted into a shared `cushionPath(in:corner:bow:)` function (pure refactor, verified
+  byte-identical renders before/after) so the bevel's cutout can reuse curvature's exact tube shape
+  — passing `effects.curvature.amount` as `curvatureAmount` — so a bevel+curvature combo never shows
+  a straight cabinet edge crossing a bowed tube edge.
+- Tests updated for the new 7th kind (`PictureEffectsTests.swift`,
+  `SettingsStorePictureEffectsTests.swift`), plus one dedicated round-trip test each for the domain
+  stepping and the storage persistence.
+- Fixed, in the same file we already had to touch: `SettingsStorePictureEffectsTests.swift` called
+  the non-existent `UserDefaults.suiteName` instance property, which meant the whole test target
+  failed to build (this was flagged, pre-existing, and left alone in ORT-299). Hoisted the suite
+  name into a local `let` instead. This is the one-line reason `NostalgiaVisionTests` now actually
+  runs.
 
-## Key decision: why the picture itself isn't warped
-`PlayerSurface.swift` hosts the real KSPlayer/AVPlayer view as a single `UIViewRepresentable`, reused
-across channel changes (documented invariant: "one player, reused, no black flash"). True per-pixel
-barrel/pincushion warp of the live video needs either a GPU texture capture (already ruled out — the
-top-of-file comment on `PictureEffectsStage.swift` notes KSPlayer's UIKit surface doesn't flatten into
-a `drawingGroup`, so shaders silently no-op) or a mesh of several transformed copies of the player view,
-which would require hosting the player in more than one place at once, breaking that invariant. So the
-curvature illusion is entirely in the overlay's shape and shading, not in warping the decoded frame.
-This is a deliberate, bounded choice — not a stopgap.
+## Key decisions
+- **No image assets.** The project has no `.xcassets` and every existing FX overlay (vignette,
+  scanlines, curvature, chroma, glow, noise) is pure SwiftUI `Canvas`/shape drawing. The bevel is
+  the same: a procedural cabinet, not a bitmap. This keeps the effect resolution-independent and
+  avoids introducing an asset pipeline for one decorative overlay.
+- **Cabinet opening is drawn from curvature's own geometry**, not a plain rounded rect, so the two
+  knobs compose cleanly together at any combination of strengths.
+- **Bevel and curvature can hide each other's edge treatment at full strength on both** — at 100%
+  bevel the cabinet's opening sits inside curvature's own rim-shadow band, so you see only the
+  inner part of curvature's blurred rim. Treated this as correct (a real cabinet's opening is
+  narrower than the tube), not a bug.
 
 ## Verification
-- Rendered the actual production `CurvatureMaskOverlay`/`PictureEffectsStage` code headlessly via
-  `ImageRenderer` on macOS (scratch harness in `/tmp/crt-preview`, not part of the repo) against a
-  color-bars test pattern, at 25/50/100% and combined with all other effects at 75%, and inspected the
-  PNGs directly. Iterated the bow/corner magnitudes once after the first pass looked like a dogbone
-  rather than a screen.
-- `xcodegen generate` + `xcodebuild build` for the real tvOS 27 simulator target: **build succeeded**.
-- Ran the `NostalgiaVisionTests` target: it fails to build for reasons unrelated to this change —
-  `Tests/DomainTests/SettingsStorePictureEffectsTests.swift:9` calls `UserDefaults.suiteName` (not a
-  real instance member). Confirmed via `git stash` that this was already broken before this change.
-  Left untouched — out of scope for this task, flagged separately.
+- `xcodegen generate` + `xcodebuild build` for the tvOS simulator: **build succeeded** (confirmed
+  independently, not just via the implementing subagent's report).
+- `xcodebuild test -only-testing:NostalgiaVisionTests`: **99 tests, 0 failures** (confirmed
+  independently) — first real run of this target; it failed to compile before the `suiteName` fix.
+- Visual check: rendered the actual production `BevelOverlay`/`PictureEffectsStage` headlessly via
+  `ImageRenderer` on macOS (scratch harness in `/tmp/bevel-preview`, not part of the repo) against a
+  color-bars test pattern, at bevel 25%/100% alone and bevel 100% combined with curvature 50%/100%.
+  Inspected the PNGs directly: a real wood-cabinet frame with a genuinely transparent cutout showing
+  the picture, a speaker grille and two knobs that scale with strength, and a cutout that bows in
+  lockstep with the curvature tube when both are on.
 
 ## Open items
-- None for this task. The pre-existing broken test file above is worth its own fix but wasn't touched
-  here to keep this change scoped to the curvature visual.
+- None for this task. ORT-301 (Noise effect) is unaffected — `signalNoise` already existed as a
+  knob and sits earlier in the `ZStack`, untouched by this change.

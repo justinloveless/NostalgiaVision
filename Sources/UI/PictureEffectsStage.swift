@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Composites the six CRT post-processing knobs over the picture.
+/// Composites the seven CRT post-processing knobs over the picture.
 ///
 /// Implemented as overlays and a light positional jitter rather than a GPU capture of the player:
 /// `KSPlayer`'s UIKit surface does not reliably flatten into a SwiftUI `drawingGroup`, so sampling
@@ -50,6 +50,10 @@ struct PictureEffectsStage<Content: View>: View {
 
             if effects.curvature.isEnabled {
                 CurvatureMaskOverlay(amount: effects.curvature.amount)
+            }
+
+            if effects.bevel.isEnabled {
+                BevelOverlay(amount: effects.bevel.amount, curvatureAmount: effects.curvature.amount)
             }
         }
     }
@@ -227,10 +231,6 @@ private struct CurvatureMaskOverlay: View {
         .accessibilityHidden(true)
     }
 
-    /// A closed cushion shape: each edge is a quadratic curve bowed toward the centre at its
-    /// midpoint, and each corner is a quadratic curve through the true rect corner (rounds it with
-    /// no arc-angle bookkeeping). `bow` is the inward pull of an edge's midpoint; `corner` is how
-    /// far the rounding reaches along each edge.
     private static func tubePath(in size: CGSize, amount: Double) -> Path {
         let insetX = 18 + 36 * amount
         let insetY = 14 + 28 * amount
@@ -242,22 +242,135 @@ private struct CurvatureMaskOverlay: View {
         )
         let corner = min(rect.width, rect.height) * (0.1 + 0.05 * amount)
         let bow = min(rect.width, rect.height) * (0.012 + 0.035 * amount)
+        return cushionPath(in: rect, corner: corner, bow: bow)
+    }
+}
 
-        let left = rect.minX, right = rect.maxX, top = rect.minY, bottom = rect.maxY
-        let midX = rect.midX, midY = rect.midY
+/// A closed cushion shape: each edge is a quadratic curve bowed toward the centre at its
+/// midpoint, and each corner is a quadratic curve through the true rect corner (rounds it with
+/// no arc-angle bookkeeping). `bow` is the inward pull of an edge's midpoint; `corner` is how
+/// far the rounding reaches along each edge.
+private func cushionPath(in rect: CGRect, corner: CGFloat, bow: CGFloat) -> Path {
+    let left = rect.minX, right = rect.maxX, top = rect.minY, bottom = rect.maxY
+    let midX = rect.midX, midY = rect.midY
 
-        var path = Path()
-        path.move(to: CGPoint(x: left + corner, y: top))
-        path.addQuadCurve(to: CGPoint(x: right - corner, y: top), control: CGPoint(x: midX, y: top + bow))
-        path.addQuadCurve(to: CGPoint(x: right, y: top + corner), control: CGPoint(x: right, y: top))
-        path.addQuadCurve(to: CGPoint(x: right, y: bottom - corner), control: CGPoint(x: right - bow, y: midY))
-        path.addQuadCurve(to: CGPoint(x: right - corner, y: bottom), control: CGPoint(x: right, y: bottom))
-        path.addQuadCurve(to: CGPoint(x: left + corner, y: bottom), control: CGPoint(x: midX, y: bottom - bow))
-        path.addQuadCurve(to: CGPoint(x: left, y: bottom - corner), control: CGPoint(x: left, y: bottom))
-        path.addQuadCurve(to: CGPoint(x: left, y: top + corner), control: CGPoint(x: left + bow, y: midY))
-        path.addQuadCurve(to: CGPoint(x: left + corner, y: top), control: CGPoint(x: left, y: top))
-        path.closeSubpath()
-        return path
+    var path = Path()
+    path.move(to: CGPoint(x: left + corner, y: top))
+    path.addQuadCurve(to: CGPoint(x: right - corner, y: top), control: CGPoint(x: midX, y: top + bow))
+    path.addQuadCurve(to: CGPoint(x: right, y: top + corner), control: CGPoint(x: right, y: top))
+    path.addQuadCurve(to: CGPoint(x: right, y: bottom - corner), control: CGPoint(x: right - bow, y: midY))
+    path.addQuadCurve(to: CGPoint(x: right - corner, y: bottom), control: CGPoint(x: right, y: bottom))
+    path.addQuadCurve(to: CGPoint(x: left + corner, y: bottom), control: CGPoint(x: midX, y: bottom - bow))
+    path.addQuadCurve(to: CGPoint(x: left, y: bottom - corner), control: CGPoint(x: left, y: bottom))
+    path.addQuadCurve(to: CGPoint(x: left, y: top + corner), control: CGPoint(x: left + bow, y: midY))
+    path.addQuadCurve(to: CGPoint(x: left + corner, y: top), control: CGPoint(x: left, y: top))
+    path.closeSubpath()
+    return path
+}
+
+/// An opaque cabinet painted over the outer band of the canvas with a cushion-shaped hole the
+/// picture shows through. Nothing is warped or resized; the set is simply in front of the tube.
+private struct BevelOverlay: View {
+    let amount: EffectAmount
+    /// The hole reuses the curvature knob's own cushion geometry, so the two never compose into a
+    /// straight cabinet edge crossing a bowed tube edge.
+    let curvatureAmount: EffectAmount
+
+    var body: some View {
+        Canvas { canvas, size in
+            let thickness = 16 + 104 * CGFloat(amount.value)
+            let topInset = thickness * 0.8
+            let bottomInset = thickness * 1.25
+            let cutoutRect = CGRect(
+                x: thickness,
+                y: topInset,
+                width: size.width - thickness * 2,
+                height: size.height - topInset - bottomInset
+            )
+            let curve = curvatureAmount.value
+            let cutout = cushionPath(
+                in: cutoutRect,
+                corner: min(cutoutRect.width, cutoutRect.height) * (0.1 + 0.05 * curve),
+                bow: min(cutoutRect.width, cutoutRect.height) * (0.012 + 0.035 * curve)
+            )
+
+            var cabinet = Path(CGRect(origin: .zero, size: size))
+            cabinet.addPath(cutout)
+            canvas.fill(
+                cabinet,
+                with: .linearGradient(
+                    Gradient(colors: [
+                        Color(red: 0.44, green: 0.31, blue: 0.20),
+                        Color(red: 0.27, green: 0.18, blue: 0.11),
+                        Color(red: 0.36, green: 0.25, blue: 0.16)
+                    ]),
+                    startPoint: .zero,
+                    endPoint: CGPoint(x: size.width, y: size.height)
+                ),
+                style: FillStyle(eoFill: true)
+            )
+
+            canvas.drawLayer { layer in
+                layer.clip(to: cabinet, style: FillStyle(eoFill: true))
+                layer.stroke(
+                    cutout,
+                    with: .color(.black.opacity(0.55)),
+                    lineWidth: 6 + 10 * amount.value
+                )
+            }
+
+            // Everything below is sized off the apron rather than in absolute points, so the
+            // grille and knobs stay in proportion as the cabinet thickens.
+            canvas.drawLayer { layer in
+                layer.clip(to: cabinet, style: FillStyle(eoFill: true))
+                let apronMidY = (cutoutRect.maxY + size.height) / 2
+                let spacing = bottomInset * 0.16
+                let dot = spacing * 0.3
+                let rows = 4
+                let originY = apronMidY - spacing * CGFloat(rows - 1) / 2
+                for row in 0..<rows {
+                    for column in 0..<26 {
+                        let x = cutoutRect.minX + spacing * (2 + CGFloat(column))
+                        let y = originY + spacing * CGFloat(row)
+                        layer.fill(
+                            Path(ellipseIn: CGRect(x: x - dot, y: y - dot, width: dot * 2, height: dot * 2)),
+                            with: .color(.black.opacity(0.55 * amount.value))
+                        )
+                    }
+                }
+
+                let radius = bottomInset * 0.26
+                for index in 0..<2 {
+                    let centerX = cutoutRect.maxX - radius * (1.4 + 3.0 * CGFloat(index))
+                    let dial = Path(ellipseIn: CGRect(
+                        x: centerX - radius,
+                        y: apronMidY - radius,
+                        width: radius * 2,
+                        height: radius * 2
+                    ))
+                    layer.fill(
+                        dial,
+                        with: .radialGradient(
+                            Gradient(colors: [
+                                Color(red: 0.78, green: 0.64, blue: 0.45).opacity(0.95 * amount.value),
+                                Color(red: 0.42, green: 0.31, blue: 0.20).opacity(0.95 * amount.value)
+                            ]),
+                            center: CGPoint(x: centerX - radius * 0.3, y: apronMidY - radius * 0.3),
+                            startRadius: 0,
+                            endRadius: radius * 1.6
+                        )
+                    )
+                    layer.stroke(
+                        dial,
+                        with: .color(.black.opacity(0.5 * amount.value)),
+                        lineWidth: max(1, radius * 0.16)
+                    )
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
