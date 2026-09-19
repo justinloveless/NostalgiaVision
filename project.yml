@@ -3,12 +3,18 @@ options:
   bundleIdPrefix: com.nostalgiavision
   deploymentTarget:
     tvOS: "17.0"
+packages:
+  KSPlayer:
+    url: https://github.com/kingslay/KSPlayer.git
+    branch: main
 targets:
   NostalgiaVision:
     type: application
     platform: tvOS
     sources:
       - Sources
+    dependencies:
+      - package: KSPlayer
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nostalgiavision.app

@@ -1,10 +1,10 @@
-import AVFoundation
+import KSPlayer
 import SwiftUI
 
 /// The picture, whatever it is doing. Nothing here is focusable, so the shell keeps focus and every
 /// move command reaches the dial.
 struct ChannelScreen: View {
-    let player: AVPlayer
+    let playerLayer: KSPlayerLayer
     let tuned: TunedChannel
     let reception: Reception
     let feedName: String
@@ -15,7 +15,7 @@ struct ChannelScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            PlayerSurface(player: player)
+            PlayerSurface(playerLayer: playerLayer)
                 .ignoresSafeArea()
 
             if reception != .picture {
