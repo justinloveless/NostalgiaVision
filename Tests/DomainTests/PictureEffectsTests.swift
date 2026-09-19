@@ -88,8 +88,21 @@ final class PictureEffectsTests: XCTestCase {
         XCTAssertEqual(after.chromaticAberration, .off)
         XCTAssertEqual(after.glowBloom, .off)
         XCTAssertEqual(after.signalNoise, .off)
+        XCTAssertEqual(after.bevel, .off)
         XCTAssertTrue(after.isActive)
         XCTAssertFalse(before.isActive)
+    }
+
+    func testSteppingBevelLeavesTheOthersAlone() {
+        let after = PictureEffects.off.stepping(.bevel)
+
+        XCTAssertEqual(after.bevel.amount, .mild)
+        XCTAssertEqual(after.vignette, .off)
+        XCTAssertEqual(after.scanLines, .off)
+        XCTAssertEqual(after.curvature, .off)
+        XCTAssertEqual(after.chromaticAberration, .off)
+        XCTAssertEqual(after.glowBloom, .off)
+        XCTAssertEqual(after.signalNoise, .off)
     }
 
     func testSubscriptReadsAndWritesEveryKind() {
@@ -104,10 +117,10 @@ final class PictureEffectsTests: XCTestCase {
         XCTAssertFalse(effects.isActive)
     }
 
-    func testAllSixKindsAreExposed() {
+    func testAllSevenKindsAreExposed() {
         XCTAssertEqual(
             PictureEffectKind.allCases.map(\.rawValue),
-            ["vignette", "scanLines", "curvature", "chromaticAberration", "glowBloom", "signalNoise"]
+            ["vignette", "scanLines", "curvature", "chromaticAberration", "glowBloom", "signalNoise", "bevel"]
         )
     }
 
@@ -118,7 +131,8 @@ final class PictureEffectsTests: XCTestCase {
             curvature: PictureEffect(amount: .strong),
             chromaticAberration: .off,
             glowBloom: PictureEffect(amount: .full),
-            signalNoise: PictureEffect(amount: .mild)
+            signalNoise: PictureEffect(amount: .mild),
+            bevel: PictureEffect(amount: .mild)
         )
 
         let encoded = try JSONEncoder().encode(original)

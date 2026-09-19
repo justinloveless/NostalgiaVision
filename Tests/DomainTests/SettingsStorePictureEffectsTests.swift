@@ -5,8 +5,9 @@ import XCTest
 final class SettingsStorePictureEffectsTests: XCTestCase {
 
     private func store() -> (SettingsStore, UserDefaults) {
-        let defaults = UserDefaults(suiteName: "nostalgiavision.tests.fx.\(UUID().uuidString)")!
-        defaults.removePersistentDomain(forName: defaults.suiteName!)
+        let suiteName = "nostalgiavision.tests.fx.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
         return (SettingsStore(defaults: defaults), defaults)
     }
 
@@ -25,12 +26,23 @@ final class SettingsStorePictureEffectsTests: XCTestCase {
             curvature: PictureEffect(amount: .strong),
             chromaticAberration: PictureEffect(amount: .full),
             glowBloom: PictureEffect(amount: .mild),
-            signalNoise: PictureEffect(amount: .medium)
+            signalNoise: PictureEffect(amount: .medium),
+            bevel: PictureEffect(amount: .strong)
         )
 
         store.persisted = state
 
         XCTAssertEqual(store.persisted.pictureEffects, state.pictureEffects)
+    }
+
+    func testBevelRoundTripsOnItsOwn() {
+        let (store, _) = store()
+        var state = store.persisted
+        state.pictureEffects.bevel = PictureEffect(amount: .full)
+
+        store.persisted = state
+
+        XCTAssertEqual(store.persisted.pictureEffects.bevel.amount, .full)
     }
 
     func testCorruptValuesFallBackToOffForThatKnobOnly() {
