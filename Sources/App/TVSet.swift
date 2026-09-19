@@ -53,6 +53,7 @@ final class TVSet {
             pin: keychain,
             current: persisted.settings,
             delay: persisted.tuneDelay,
+            effects: persisted.pictureEffects,
             now: .now
         )
         self.trouble = persisted.settings == nil ? .notConfigured : nil
@@ -77,6 +78,10 @@ final class TVSet {
 
     /// The display name the viewer gave the feed, shown as a corner watermark.
     var feedName: String { store.persisted.settings?.displayName ?? "" }
+
+    /// CRT post-processing knobs applied over the picture. Read through from the store so a
+    /// settings click updates the live channel the moment the viewer tunes back.
+    var pictureEffects: PictureEffects { store.persisted.pictureEffects }
 
     /// Idempotent. Restores persisted settings and refreshes the lineup. Safe to call again on
     /// scene re-activation: a second call performs no fetch and no re-tune.
@@ -116,6 +121,10 @@ final class TVSet {
             case let .persistDelay(delay):
                 var persisted = store.persisted
                 persisted.tuneDelay = delay
+                store.persisted = persisted
+            case let .persistEffects(effects):
+                var persisted = store.persisted
+                persisted.pictureEffects = effects
                 store.persisted = persisted
             case let .refetchFeed(url):
                 startRefresh(from: url)

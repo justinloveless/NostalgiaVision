@@ -13,6 +13,9 @@ struct PersistedState: Equatable {
     /// Deliberately NOT nested in `FeedSettings`: it must have a legal value before any feed is
     /// configured, and it must survive the viewer clearing or replacing the feed URL.
     var tuneDelay: TuneDelay = .standard
+    /// CRT post-processing knobs. Same lifetime rules as `tuneDelay`: legal before any feed is
+    /// configured, survives feed replacement, and is never part of the committable draft.
+    var pictureEffects: PictureEffects = .off
 }
 
 /// The only file in the app containing a `UserDefaults` key string.
@@ -26,6 +29,12 @@ final class SettingsStore {
         static let feedName = "nostalgiavision.feed.name"
         static let lastTuned = "nostalgiavision.lastTunedChannelID"
         static let tuneDelay = "nostalgiavision.tune.delayMilliseconds"
+        static let vignette = "nostalgiavision.fx.vignette"
+        static let scanLines = "nostalgiavision.fx.scanLines"
+        static let curvature = "nostalgiavision.fx.curvature"
+        static let chromaticAberration = "nostalgiavision.fx.chromaticAberration"
+        static let glowBloom = "nostalgiavision.fx.glowBloom"
+        static let signalNoise = "nostalgiavision.fx.signalNoise"
     }
 
     private let defaults: UserDefaults
@@ -43,7 +52,20 @@ final class SettingsStore {
             // `integer(forKey:)` returns 0 for an absent key, which is out of range, so "never
             // configured" and "corrupt" take the same fallback path.
             let tuneDelay = TuneDelay(milliseconds: defaults.integer(forKey: Key.tuneDelay)) ?? .standard
-            return PersistedState(settings: settings, lastTuned: lastTuned, tuneDelay: tuneDelay)
+            let pictureEffects = PictureEffects(
+                vignette: effect(forKey: Key.vignette),
+                scanLines: effect(forKey: Key.scanLines),
+                curvature: effect(forKey: Key.curvature),
+                chromaticAberration: effect(forKey: Key.chromaticAberration),
+                glowBloom: effect(forKey: Key.glowBloom),
+                signalNoise: effect(forKey: Key.signalNoise)
+            )
+            return PersistedState(
+                settings: settings,
+                lastTuned: lastTuned,
+                tuneDelay: tuneDelay,
+                pictureEffects: pictureEffects
+            )
         }
         set {
             let current = persisted
@@ -60,6 +82,28 @@ final class SettingsStore {
             if current.tuneDelay != newValue.tuneDelay {
                 defaults.set(newValue.tuneDelay.milliseconds, forKey: Key.tuneDelay)
             }
+            write(newValue.pictureEffects.vignette, forKey: Key.vignette, was: current.pictureEffects.vignette)
+            write(newValue.pictureEffects.scanLines, forKey: Key.scanLines, was: current.pictureEffects.scanLines)
+            write(newValue.pictureEffects.curvature, forKey: Key.curvature, was: current.pictureEffects.curvature)
+            write(
+                newValue.pictureEffects.chromaticAberration,
+                forKey: Key.chromaticAberration,
+                was: current.pictureEffects.chromaticAberration
+            )
+            write(newValue.pictureEffects.glowBloom, forKey: Key.glowBloom, was: current.pictureEffects.glowBloom)
+            write(newValue.pictureEffects.signalNoise, forKey: Key.signalNoise, was: current.pictureEffects.signalNoise)
         }
+    }
+
+    /// Absent or corrupt keys mean off — upgrading an install that never saw FX writes nothing.
+    private func effect(forKey key: String) -> PictureEffect {
+        guard defaults.object(forKey: key) != nil else { return .off }
+        let raw = defaults.double(forKey: key)
+        return PictureEffect(amount: EffectAmount(value: raw) ?? .off)
+    }
+
+    private func write(_ effect: PictureEffect, forKey key: String, was prior: PictureEffect) {
+        guard effect != prior else { return }
+        defaults.set(effect.amount.value, forKey: key)
     }
 }

@@ -13,6 +13,9 @@ struct SettingsScreenView: View {
 
     @State private var editingField: EditableField?
     @State private var pinEntry: [Digit]?
+    /// Nested CRT-effects row. Same idea as the PIN entry sub-row: one horizontal strip, no
+    /// vertical focus traps, BACK returns to the main settings fields.
+    @State private var editingEffects = false
 
     enum EditableField: String, Identifiable {
         case feedURL = "Feed URL"
@@ -23,7 +26,7 @@ struct SettingsScreenView: View {
 
     var body: some View {
         VStack(spacing: 72) {
-            Text("SET-UP")
+            Text(editingEffects ? "PICTURE FX" : "SET-UP")
                 .font(.system(size: 44, weight: .heavy, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.5))
                 .tracking(12)
@@ -42,6 +45,16 @@ struct SettingsScreenView: View {
                 commit(text, to: field)
             }
         }
+        .onChange(of: isEditing) { _, editing in
+            // Leaving the unlocked draft (re-lock, or dial away) must collapse the FX sub-row so a
+            // later unlock does not open straight into effects.
+            if !editing { editingEffects = false }
+        }
+    }
+
+    private var isEditing: Bool {
+        if case .editing = screen { return true }
+        return false
     }
 
     @ViewBuilder
@@ -78,6 +91,18 @@ struct SettingsScreenView: View {
                         PINKeypadRow.Control(title: "BACK", isEnabled: true) { pinEntry = nil }
                     ]
                 )
+            } else if editingEffects {
+                HStack(spacing: 36) {
+                    ForEach(PictureEffectKind.allCases, id: \.self) { kind in
+                        field(title: kind.title, value: draft.pictureEffects[kind].caption, isValid: true) {
+                            send(.effectStepped(kind))
+                        }
+                    }
+
+                    field(title: "BACK", value: "SET-UP", isValid: true) {
+                        editingEffects = false
+                    }
+                }
             } else {
                 HStack(spacing: 60) {
                     field(
@@ -104,6 +129,14 @@ struct SettingsScreenView: View {
                     // nothing to type, so no editor cover and no commit.
                     field(title: "TUNE DELAY", value: draft.tuneDelay.caption, isValid: true) {
                         send(.delayStepped)
+                    }
+
+                    field(
+                        title: "PICTURE FX",
+                        value: draft.pictureEffects.isActive ? "ON" : "OFF",
+                        isValid: true
+                    ) {
+                        editingEffects = true
                     }
                 }
             }

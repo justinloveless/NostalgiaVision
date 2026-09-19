@@ -279,6 +279,75 @@ final class SettingsGateTests: XCTestCase {
         XCTAssertEqual(draft(of: gate)?.tuneDelay, .standard)
     }
 
+    func testPictureEffectsDefaultToAllOff() {
+        let gate = SettingsGate(pin: StubPIN(pin: nil), current: nil, now: now)
+
+        XCTAssertEqual(draft(of: gate)?.pictureEffects, .off)
+    }
+
+    func testSteppingAPictureEffectUpdatesTheDraftAndPersistsAtOnce() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            effects: .off,
+            now: now
+        )
+
+        let effects = gate.apply(.effectStepped(.vignette), now: now)
+
+        let expected = PictureEffects.off.stepping(.vignette)
+        XCTAssertEqual(effects, [.persistEffects(expected)])
+        XCTAssertEqual(draft(of: gate)?.pictureEffects, expected)
+    }
+
+    func testSteppingAPictureEffectNeverTouchesTheCommittableSettings() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            effects: .off,
+            now: now
+        )
+
+        gate.apply(.effectStepped(.scanLines), now: now)
+
+        XCTAssertEqual(draft(of: gate)?.validated, settings("https://tunarr.local/a.m3u"))
+        XCTAssertTrue(gate.apply(.commitRequested, now: now).isEmpty, "picture FX are not feed settings")
+    }
+
+    func testSteppingAPictureEffectWhileLockedIsANoOp() {
+        var gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: nil, effects: .off, now: now)
+
+        XCTAssertTrue(gate.apply(.effectStepped(.glowBloom), now: now).isEmpty)
+        XCTAssertNil(draft(of: gate))
+    }
+
+    func testLeavingSettingsReseedsTheDraftWithSteppedEffects() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            effects: .off,
+            now: now
+        )
+        gate.apply(.effectStepped(.curvature), now: now)
+        let stepped = PictureEffects.off.stepping(.curvature)
+
+        gate.apply(.leftSettings, now: now)
+
+        XCTAssertEqual(draft(of: gate)?.pictureEffects, stepped)
+    }
+
+    func testUnlockingAfterSteppingEffectsShowsTheSteppedValue() {
+        var gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: nil, effects: .off, now: now)
+        type("4821", into: &gate)
+        gate.apply(.effectStepped(.signalNoise), now: now)
+        let stepped = PictureEffects.off.stepping(.signalNoise)
+
+        gate.apply(.leftSettings, now: now)
+        type("4821", into: &gate)
+
+        XCTAssertEqual(draft(of: gate)?.pictureEffects, stepped)
+    }
+
     func testLockedScreenIgnoresDraftAndCommitEvents() {
         var gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: nil, now: now)
         var forged = SettingsDraft(from: nil)
