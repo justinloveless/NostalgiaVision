@@ -10,6 +10,9 @@ struct FeedSettings: Equatable, Codable, Sendable {
 struct PersistedState: Equatable {
     var settings: FeedSettings?
     var lastTuned: ChannelID?
+    /// Deliberately NOT nested in `FeedSettings`: it must have a legal value before any feed is
+    /// configured, and it must survive the viewer clearing or replacing the feed URL.
+    var tuneDelay: TuneDelay = .standard
 }
 
 /// The only file in the app containing a `UserDefaults` key string.
@@ -22,6 +25,7 @@ final class SettingsStore {
         static let feedURL = "nostalgiavision.feed.url"
         static let feedName = "nostalgiavision.feed.name"
         static let lastTuned = "nostalgiavision.lastTunedChannelID"
+        static let tuneDelay = "nostalgiavision.tune.delayMilliseconds"
     }
 
     private let defaults: UserDefaults
@@ -36,7 +40,10 @@ final class SettingsStore {
                 FeedSettings(feedURL: $0, displayName: defaults.string(forKey: Key.feedName) ?? "")
             }
             let lastTuned = defaults.string(forKey: Key.lastTuned).map(ChannelID.init(rawValue:))
-            return PersistedState(settings: settings, lastTuned: lastTuned)
+            // `integer(forKey:)` returns 0 for an absent key, which is out of range, so "never
+            // configured" and "corrupt" take the same fallback path.
+            let tuneDelay = TuneDelay(milliseconds: defaults.integer(forKey: Key.tuneDelay)) ?? .standard
+            return PersistedState(settings: settings, lastTuned: lastTuned, tuneDelay: tuneDelay)
         }
         set {
             let current = persisted
@@ -49,6 +56,9 @@ final class SettingsStore {
             }
             if current.lastTuned != newValue.lastTuned {
                 defaults.set(newValue.lastTuned?.rawValue, forKey: Key.lastTuned)
+            }
+            if current.tuneDelay != newValue.tuneDelay {
+                defaults.set(newValue.tuneDelay.milliseconds, forKey: Key.tuneDelay)
             }
         }
     }

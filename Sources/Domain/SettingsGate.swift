@@ -75,11 +75,15 @@ struct SettingsDraft: Equatable {
     var feedURLText: String
     var feedName: String
     var pinEdit: PINEdit
+    /// Not part of `FeedSettings` and never part of `validated`: stepping it persists immediately,
+    /// exactly like clearing the PIN, so there is nothing to commit.
+    var tuneDelay: TuneDelay
 
-    init(from settings: FeedSettings?) {
+    init(from settings: FeedSettings?, delay: TuneDelay = .standard) {
         self.feedURLText = settings?.feedURL.text ?? ""
         self.feedName = settings?.displayName ?? ""
         self.pinEdit = .unchanged
+        self.tuneDelay = delay
     }
 
     /// Non-nil exactly when the draft is safe to persist. The view renders the URL field in CRT red
@@ -109,16 +113,20 @@ enum PINEdit: Equatable {
 struct SettingsGate {
     private let pin: any PINOracle
     private var current: FeedSettings?
+    /// The gate's own copy of the persisted delay, so a draft rebuilt after re-locking or
+    /// re-entering shows the stepped value rather than the one the gate was born with.
+    private var currentDelay: TuneDelay
 
     private(set) var screen: SettingsScreen
 
-    init(pin: any PINOracle, current: FeedSettings?, now: Date) {
+    init(pin: any PINOracle, current: FeedSettings?, delay: TuneDelay = .standard, now: Date) {
         self.pin = pin
         self.current = current
+        self.currentDelay = delay
         if let length = pin.configuredLength {
             self.screen = .locked(PINChallenge(expectedLength: length))
         } else {
-            self.screen = .editing(SettingsDraft(from: current))
+            self.screen = .editing(SettingsDraft(from: current, delay: delay))
         }
     }
 
@@ -132,6 +140,9 @@ struct SettingsGate {
         case backspace
         case draftChanged(SettingsDraft)
         case pinEdited(PINEdit)
+        /// The viewer clicked the tune-delay field: advance one detent and persist at once. Like
+        /// clearing the PIN, this is not part of the committable draft.
+        case delayStepped
         /// The viewer finished editing a field.
         case commitRequested
     }
@@ -162,7 +173,7 @@ struct SettingsGate {
             if let length = pin.configuredLength {
                 screen = .locked(PINChallenge(expectedLength: length))
             } else {
-                screen = .editing(SettingsDraft(from: current))
+                screen = .editing(SettingsDraft(from: current, delay: currentDelay))
             }
             return effects
 
@@ -174,7 +185,7 @@ struct SettingsGate {
                 return []
             }
             if let candidate = PIN(digits: challenge.typed), pin.accepts(candidate) {
-                screen = .editing(SettingsDraft(from: current))
+                screen = .editing(SettingsDraft(from: current, delay: currentDelay))
             } else {
                 challenge.rejected(at: now)
                 screen = .locked(challenge)
@@ -204,11 +215,18 @@ struct SettingsGate {
                 return [.persistPIN(newPIN)]
             }
 
+        case (.editing(var draft), .delayStepped):
+            draft.tuneDelay = draft.tuneDelay.stepped()
+            currentDelay = draft.tuneDelay
+            screen = .editing(draft)
+            return [.persistDelay(draft.tuneDelay)]
+
         case let (.editing(draft), .commitRequested):
             return commit(draft)
 
         case (.editing, .typed), (.editing, .backspace),
-             (.locked, .draftChanged), (.locked, .pinEdited), (.locked, .commitRequested):
+             (.locked, .draftChanged), (.locked, .pinEdited), (.locked, .commitRequested),
+             (.locked, .delayStepped):
             return []
         }
     }
@@ -227,5 +245,6 @@ enum GateEffect: Equatable {
     case persist(FeedSettings)
     /// `nil` clears the configured PIN.
     case persistPIN(PIN?)
+    case persistDelay(TuneDelay)
     case refetchFeed(FeedURL)
 }

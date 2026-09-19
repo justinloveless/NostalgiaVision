@@ -208,6 +208,77 @@ final class SettingsGateTests: XCTestCase {
         XCTAssertEqual(draft(of: gate)?.feedName, "Den")
     }
 
+    func testSteppingTheTuneDelayUpdatesTheDraftAndPersistsAtOnce() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            delay: .standard,
+            now: now
+        )
+        XCTAssertEqual(draft(of: gate)?.tuneDelay, .standard)
+
+        let effects = gate.apply(.delayStepped, now: now)
+
+        XCTAssertEqual(effects, [.persistDelay(TuneDelay.standard.stepped())])
+        XCTAssertEqual(draft(of: gate)?.tuneDelay, TuneDelay.standard.stepped())
+    }
+
+    func testSteppingTheTuneDelayNeverTouchesTheCommittableSettings() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            delay: .standard,
+            now: now
+        )
+
+        gate.apply(.delayStepped, now: now)
+
+        XCTAssertEqual(draft(of: gate)?.validated, settings("https://tunarr.local/a.m3u"))
+        XCTAssertTrue(gate.apply(.commitRequested, now: now).isEmpty, "the delay is not feed settings")
+    }
+
+    func testSteppingTheTuneDelayWhileLockedIsANoOp() {
+        var gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: nil, delay: .standard, now: now)
+
+        XCTAssertTrue(gate.apply(.delayStepped, now: now).isEmpty)
+        XCTAssertNil(draft(of: gate), "a locked screen has no draft to step")
+        XCTAssertEqual(challenge(of: gate)?.expectedLength, 4)
+    }
+
+    func testLeavingSettingsReseedsTheDraftWithTheSteppedDelay() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            delay: .standard,
+            now: now
+        )
+        gate.apply(.delayStepped, now: now)
+        let stepped = TuneDelay.standard.stepped()
+
+        gate.apply(.leftSettings, now: now)
+
+        XCTAssertEqual(draft(of: gate)?.tuneDelay, stepped, "the rebuilt draft must not show a stale delay")
+    }
+
+    func testUnlockingAfterSteppingShowsTheSteppedDelay() {
+        var gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: nil, delay: .standard, now: now)
+        type("4821", into: &gate)
+        gate.apply(.delayStepped, now: now)
+        let stepped = TuneDelay.standard.stepped()
+
+        gate.apply(.leftSettings, now: now)
+        XCTAssertNil(draft(of: gate), "a PIN is configured, so leaving re-locks")
+        type("4821", into: &gate)
+
+        XCTAssertEqual(draft(of: gate)?.tuneDelay, stepped)
+    }
+
+    func testTheDelayDefaultsToStandardWhenTheCallerDoesNotSupplyOne() {
+        let gate = SettingsGate(pin: StubPIN(pin: nil), current: nil, now: now)
+
+        XCTAssertEqual(draft(of: gate)?.tuneDelay, .standard)
+    }
+
     func testLockedScreenIgnoresDraftAndCommitEvents() {
         var gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: nil, now: now)
         var forged = SettingsDraft(from: nil)

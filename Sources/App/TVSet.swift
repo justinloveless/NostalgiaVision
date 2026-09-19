@@ -1,5 +1,5 @@
-import AVFoundation
 import Foundation
+import KSPlayer
 import Observation
 
 /// The render contract. The root view is a `switch` over this and nothing else.
@@ -49,13 +49,19 @@ final class TVSet {
 
         let persisted = store.persisted
         self.dial = Dial(cycle: .deadAir, resuming: persisted.lastTuned)
-        self.gate = SettingsGate(pin: keychain, current: persisted.settings, now: .now)
+        self.gate = SettingsGate(
+            pin: keychain,
+            current: persisted.settings,
+            delay: persisted.tuneDelay,
+            now: .now
+        )
         self.trouble = persisted.settings == nil ? .notConfigured : nil
     }
 
-    /// The single value the root view renders. Derived on every access.
+    /// The single value the root view renders. Derived on every access, from what is *airing* —
+    /// the knob may already be pointing somewhere else, which is what `preview` is for.
     var screen: Screen {
-        switch dial.position {
+        switch dial.live {
         case let .channel(tuned):
             return .channel(tuned, receiver.reception)
         case .settings:
@@ -63,8 +69,11 @@ final class TVSet {
         }
     }
 
+    /// What the preview bar names, `nil` when nothing is pending. Derived; never assigned.
+    var preview: DialPosition? { dial.preview }
+
     /// Handed straight to `PlayerSurface`; the view never touches `Receiver` otherwise.
-    var player: AVPlayer { receiver.player }
+    var playerLayer: KSPlayerLayer { receiver.playerLayer }
 
     /// The display name the viewer gave the feed, shown as a corner watermark.
     var feedName: String { store.persisted.settings?.displayName ?? "" }
@@ -78,27 +87,19 @@ final class TVSet {
         guard let settings = store.persisted.settings else {
             dial.tuneToSettings()
             trouble = .notConfigured
-            receiver.stop()
+            settle()
             return
         }
         startRefresh(from: settings.feedURL)
     }
 
-    /// Moves the dial immediately and schedules the actual tune after `TuneSettle.interval`.
-    /// Cancels any pending settle, so fast surfing starts exactly one stream.
+    /// Moves the knob immediately and schedules the actual switch for once it sits still for the
+    /// configured `TuneDelay`. Cancels any pending settle, so fast surfing starts exactly one
+    /// stream. Nothing else happens here: the picture, the gate and the store are all the business
+    /// of `settle()`.
     func turn(_ direction: TuneDirection) {
         hasResumed = true
-        let wasOnSettings = dial.position == .settings
         dial.turn(direction)
-        let isOnSettings = dial.position == .settings
-
-        if wasOnSettings && !isOnSettings {
-            settings(.leftSettings)
-        } else if isOnSettings && !wasOnSettings {
-            settings(.enteredSettings)
-        }
-
-        if !isOnSettings { receiver.beginAcquiring() }
         scheduleSettle()
     }
 
@@ -112,6 +113,10 @@ final class TVSet {
                 store.persisted = persisted
             case let .persistPIN(pin):
                 keychain.save(pin)
+            case let .persistDelay(delay):
+                var persisted = store.persisted
+                persisted.tuneDelay = delay
+                store.persisted = persisted
             case let .refetchFeed(url):
                 startRefresh(from: url)
             }
@@ -120,27 +125,50 @@ final class TVSet {
 
     /// Menu button. Only installed while settings is on screen, so on a channel the system handles
     /// it and exits to the Home screen — which is the correct behaviour for a TV set.
+    ///
+    /// The guard is on `dial.live`, not `dial.position`, for exactly that reason. With a preview
+    /// already pending — the knob has moved off settings while settings is still what's airing —
+    /// Menu commits that preview rather than jumping back to `lastTuned`.
     func pressedMenu() {
-        guard dial.position == .settings else { return }
-        settings(.leftSettings)
-        dial.resume(store.persisted.lastTuned)
-        if dial.position != .settings {
-            receiver.beginAcquiring()
-            scheduleSettle()
-        }
+        guard dial.live == .settings else { return }
+        if dial.preview == nil { dial.resume(store.persisted.lastTuned) }
+        settle()
     }
 
     private func scheduleSettle() {
         settleTask?.cancel()
+        // Captured at schedule time, not fire time: changing the delay never retimes a switch that
+        // is already counting down.
+        let delay = store.persisted.tuneDelay
         settleTask = Task { [weak self] in
-            try? await Task.sleep(for: TuneSettle.interval)
+            try? await Task.sleep(for: delay.duration)
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in self?.settle() }
         }
     }
 
+    /// The single place the live position changes, and therefore the single place the gate's
+    /// entered/left events fire, snow starts (inside `receiver.tune`), the tune happens, and
+    /// `lastTuned` is persisted.
+    ///
+    /// Idempotent end to end: firing twice, or calling it with nothing pending, is a true no-op —
+    /// `dial.settle()` rewrites the value already there and `receiver.tune(to:)` returns at its
+    /// identity guard without so much as starting snow.
     private func settle() {
-        switch dial.position {
+        settleTask?.cancel()
+        settleTask = nil
+
+        let wasOnSettings = dial.live == .settings
+        dial.settle()
+        let isOnSettings = dial.live == .settings
+
+        if wasOnSettings && !isOnSettings {
+            settings(.leftSettings)
+        } else if isOnSettings && !wasOnSettings {
+            settings(.enteredSettings)
+        }
+
+        switch dial.live {
         case let .channel(tuned):
             receiver.tune(to: tuned.channel)
             var persisted = store.persisted

@@ -79,29 +79,57 @@ enum TuneDirection: Equatable, Sendable {
     case up, down
 }
 
-/// A cycle plus a cursor. The cursor is private and only `turn`/`relineup`/`resume`/`tuneToSettings`
-/// move it, so every reachable state is valid by construction rather than by validation.
+/// A cycle plus two cursors. Both are private and only `turn`/`settle`/`relineup`/`resume`/
+/// `tuneToSettings` move them, so every reachable state is valid by construction rather than by
+/// validation.
 ///
 /// `up` advances to the next-higher channel number; from the last channel it lands on `.settings`,
 /// and from `.settings` it lands on channel 1. `down` is the exact mirror. Both wrap forever.
+///
+/// The knob and the picture are deliberately separate: turning moves the knob immediately, and only
+/// `settle()` brings the picture to it. "A change is pending" is therefore arithmetic over two
+/// cursors, never a stored flag that could disagree with them.
 struct Dial: Equatable, Sendable {
     private var cycle: TuningCycle
     /// 0..<cycle.slotCount. Slot `channelCount` is the settings slot — that placement is what puts
     /// settings "between the last channel and the first" for free.
     private var cursor: Int
+    /// What is actually airing: what `Receiver` is playing, or the settings slot when the settings
+    /// screen is up. Moved only by `settle()` (and re-projected by `relineup`). Starts equal to
+    /// `cursor`, so a freshly built dial is settled by construction and no preview can flash at
+    /// launch.
+    private var liveCursor: Int
 
     /// - Parameter resuming: the channel the viewer was last watching. Restores that slot when the
     ///   id is still present; otherwise starts on channel 1 (or `.settings` for `.deadAir`, where
     ///   slot 0 *is* the settings slot).
     init(cycle: TuningCycle, resuming: ChannelID?) {
         self.cycle = cycle
-        self.cursor = resuming.flatMap { cycle.firstSlot(of: $0) } ?? 0
+        let slot = resuming.flatMap { cycle.firstSlot(of: $0) } ?? 0
+        self.cursor = slot
+        self.liveCursor = slot
     }
 
-    /// Derived from `(cycle, cursor)` on every read. No stored copy exists to fall out of date.
-    var position: DialPosition {
-        guard let channel = cycle.channel(atSlot: cursor) else { return .settings }
-        return .channel(TunedChannel(channel: channel, number: ChannelNumber(cursor + 1)))
+    /// Where the knob points. Derived from `(cycle, cursor)` on every read. No stored copy exists to
+    /// fall out of date.
+    var position: DialPosition { position(atSlot: cursor) }
+
+    /// What is actually airing. Feeds `TVSet.screen`'s base case.
+    var live: DialPosition { position(atSlot: liveCursor) }
+
+    /// True iff the knob and the picture agree, by SLOT — not by channel identity, so previewing
+    /// between two slots holding the same duplicate `Channel` is still a real preview with a real,
+    /// different `ChannelNumber`.
+    var isSettled: Bool { cursor == liveCursor }
+
+    /// `position` while a preview is pending, `nil` once settled. The single source of truth for
+    /// "a channel change is pending" — never a stored flag. On `.deadAir` this is permanently `nil`
+    /// by arithmetic (one slot, cursors cannot differ), so no special case for an empty lineup.
+    var preview: DialPosition? { isSettled ? nil : position }
+
+    private func position(atSlot slot: Int) -> DialPosition {
+        guard let channel = cycle.channel(atSlot: slot) else { return .settings }
+        return .channel(TunedChannel(channel: channel, number: ChannelNumber(slot + 1)))
     }
 
     mutating func turn(_ direction: TuneDirection) {
@@ -112,24 +140,38 @@ struct Dial: Equatable, Sendable {
         }
     }
 
+    /// Brings the picture to the knob. The ONLY mutator that moves `liveCursor` on its own.
+    /// Idempotent: on an already-settled dial this writes the value already there.
+    mutating func settle() {
+        liveCursor = cursor
+    }
+
     /// Swaps in a refreshed lineup, keeping the viewer on the same channel when its `ChannelID`
     /// still exists, otherwise parking on `.settings` so a feed that changed out from under the
     /// viewer never silently drops them onto an unrelated channel.
     ///
+    /// Both cursors are re-projected by `ChannelID`, independently: a pending preview survives a
+    /// lineup refresh, and either cursor falls back to the settings slot on its own when its channel
+    /// is the one that disappeared.
+    ///
     /// Idempotent: applying the same cycle twice is a no-op.
     mutating func relineup(to cycle: TuningCycle) {
-        let watching = position.channelID
+        let pointing = position.channelID
+        let airing = live.channelID
         self.cycle = cycle
-        self.cursor = watching.flatMap { cycle.firstSlot(of: $0) } ?? cycle.channelCount
+        self.cursor = pointing.flatMap { cycle.firstSlot(of: $0) } ?? cycle.channelCount
+        self.liveCursor = airing.flatMap { cycle.firstSlot(of: $0) } ?? cycle.channelCount
     }
 
-    /// Returns to a known channel, falling back to channel 1 exactly as `init(resuming:)` does.
-    /// Used at launch once the lineup arrives, and by the Menu button leaving settings.
+    /// Points the knob at a known channel, falling back to channel 1 exactly as `init(resuming:)`
+    /// does. Does NOT move the picture — callers follow it with `settle()` when the move should be
+    /// immediate. Used at launch once the lineup arrives, and by the Menu button leaving settings.
     mutating func resume(_ id: ChannelID?) {
         cursor = id.flatMap { cycle.firstSlot(of: $0) } ?? 0
     }
 
-    /// Jumps to the settings slot. Used on first launch with no feed URL configured.
+    /// Points the knob at the settings slot. Does NOT move the picture. Used on first launch with
+    /// no feed URL configured.
     mutating func tuneToSettings() {
         cursor = cycle.channelCount
     }

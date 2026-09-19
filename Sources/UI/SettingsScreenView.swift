@@ -99,6 +99,12 @@ struct SettingsScreenView: View {
                     field(title: "CLEAR PIN", value: "NO LOCK", isValid: true) {
                         send(.pinEdited(.cleared))
                     }
+
+                    // Steps the detent ladder and persists on the spot, like CLEAR PIN — there is
+                    // nothing to type, so no editor cover and no commit.
+                    field(title: "TUNE DELAY", value: draft.tuneDelay.caption, isValid: true) {
+                        send(.delayStepped)
+                    }
                 }
             }
         }

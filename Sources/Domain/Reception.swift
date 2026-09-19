@@ -41,10 +41,47 @@ enum RetryPolicy {
     static let stallPatience: Duration = .seconds(12)
 }
 
-/// Channel-surfing debounce. The number on screen changes instantly; the stream starts when the
-/// knob stops. Without this, spinning through 40 channels opens 40 HLS sessions.
-enum TuneSettle {
-    static let interval: Duration = .milliseconds(300)
+/// How long the knob must sit still before the picture actually changes. Channel-surfing debounce:
+/// the preview bar names the new channel instantly; the stream starts when the knob stops. Without
+/// this, spinning through 40 channels opens 40 HLS sessions.
+///
+/// Persisted and user-editable from Settings; replaces the hardcoded `TuneSettle.interval`.
+///
+/// Constructible only through the failable millisecond initializer (the persistence boundary) or
+/// `stepped()`, so every `TuneDelay` in memory is already known-valid; nothing downstream re-checks
+/// the range.
+struct TuneDelay: Equatable, Codable, Sendable {
+    static let allowedMilliseconds: ClosedRange<Int> = 150...2000
+    /// Matches the previously hardcoded `TuneSettle.interval` exactly — upgrading changes nothing
+    /// for a viewer who never opens the new setting.
+    static let standard = TuneDelay(milliseconds: 300)!
+    static let step = 150
+    /// Ascending, all in range, non-empty. What the settings control cycles through.
+    static let detents: [TuneDelay] = stride(
+        from: allowedMilliseconds.lowerBound,
+        through: allowedMilliseconds.upperBound,
+        by: step
+    ).compactMap(TuneDelay.init(milliseconds:))
+
+    let milliseconds: Int
+
+    /// `nil` outside `allowedMilliseconds` — including the `0` that `UserDefaults.integer(forKey:)`
+    /// returns for an absent key, so "never configured" and "corrupt" take the same fallback path.
+    init?(milliseconds: Int) {
+        guard Self.allowedMilliseconds.contains(milliseconds) else { return nil }
+        self.milliseconds = milliseconds
+    }
+
+    var duration: Duration { .milliseconds(milliseconds) }
+
+    /// The next detent, wrapping at the top. Tolerant of a persisted value that is no longer itself
+    /// a detent: it lands on the first detent strictly above it.
+    func stepped() -> TuneDelay {
+        Self.detents.first { $0.milliseconds > milliseconds } ?? Self.detents[0]
+    }
+
+    /// "0.3 SEC", "1.2 SEC" — the one place a delay becomes text.
+    var caption: String { String(format: "%.1f SEC", Double(milliseconds) / 1000) }
 }
 
 extension Duration {

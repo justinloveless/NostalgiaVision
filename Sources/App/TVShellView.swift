@@ -18,13 +18,20 @@ struct TVShellView: View {
                 // focus target is the channel screen itself, not the root: a focusable root spans
                 // the whole window, so on settings the focus engine would never descend into the
                 // control row and every control would look selected at once.
-                ChannelScreen(player: tv.player, tuned: tuned, reception: reception, feedName: tv.feedName)
+                ChannelScreen(playerLayer: tv.playerLayer, tuned: tuned, reception: reception, feedName: tv.feedName)
                     .focusable(true)
                     .focused($shellHasFocus)
 
             case let .settings(screen, trouble):
                 // Horizontally navigable by construction; leaves up/down to the dial.
                 SettingsScreenView(screen: screen, trouble: trouble) { event in tv.settings(event) }
+            }
+        }
+        // A sibling of the screen, not part of it: the bar names where the knob is pointing, which
+        // is by definition not what either branch above is rendering.
+        .overlay(alignment: .top) {
+            if let target = tv.preview {
+                PreviewBar(target: target)
             }
         }
         .onMoveCommand { direction in
