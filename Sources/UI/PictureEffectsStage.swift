@@ -177,32 +177,87 @@ private struct GlowBloomOverlay: View {
     }
 }
 
-/// Barrel darkening that reads as a curved CRT face even though the picture itself stays flat.
+/// Sells a curved piece of glass rather than a rounded corner crop: the tube's boundary is a
+/// pillow/cushion shape (edges bow inward at their midpoint, not just the corners), with a blurred
+/// dark rim where the glass reads thickest and a specular sweep where it catches the light.
 private struct CurvatureMaskOverlay: View {
     let amount: EffectAmount
 
     var body: some View {
         Canvas { canvas, size in
-            let insetX = 18 + 36 * amount.value
-            let insetY = 14 + 28 * amount.value
-            let tube = CGRect(
-                x: insetX,
-                y: insetY,
-                width: size.width - insetX * 2,
-                height: size.height - insetY * 2
-            )
-            let radius = min(tube.width, tube.height) * (0.08 + 0.06 * amount.value)
-            var outer = Path(CGRect(origin: .zero, size: size))
-            outer.addPath(Path(roundedRect: tube, cornerRadius: radius))
+            let tube = Self.tubePath(in: size, amount: amount.value)
+
+            var mask = Path(CGRect(origin: .zero, size: size))
+            mask.addPath(tube)
             canvas.fill(
-                outer,
+                mask,
                 with: .color(.black.opacity(0.55 + 0.35 * amount.value)),
                 style: FillStyle(eoFill: true)
             )
+
+            // Rim compression: the glass looks thickest right at the curve, same as light grazing
+            // the edge of an actual curved surface.
+            canvas.drawLayer { layer in
+                layer.clip(to: tube)
+                layer.addFilter(.blur(radius: 8 + 14 * amount.value))
+                layer.stroke(
+                    tube,
+                    with: .color(.black.opacity(0.35 * amount.value)),
+                    lineWidth: 20 + 46 * amount.value
+                )
+            }
+
+            // Specular sweep: a soft highlight arcing across the upper rim, the way light catches
+            // curved glass.
+            canvas.drawLayer { layer in
+                layer.clip(to: tube)
+                let bandHeight = size.height * (0.22 + 0.1 * amount.value)
+                layer.fill(
+                    Path(CGRect(x: 0, y: 0, width: size.width, height: bandHeight)),
+                    with: .linearGradient(
+                        Gradient(colors: [.white.opacity(0.16 * amount.value), .clear]),
+                        startPoint: CGPoint(x: size.width / 2, y: 0),
+                        endPoint: CGPoint(x: size.width / 2, y: bandHeight)
+                    )
+                )
+            }
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// A closed cushion shape: each edge is a quadratic curve bowed toward the centre at its
+    /// midpoint, and each corner is a quadratic curve through the true rect corner (rounds it with
+    /// no arc-angle bookkeeping). `bow` is the inward pull of an edge's midpoint; `corner` is how
+    /// far the rounding reaches along each edge.
+    private static func tubePath(in size: CGSize, amount: Double) -> Path {
+        let insetX = 18 + 36 * amount
+        let insetY = 14 + 28 * amount
+        let rect = CGRect(
+            x: insetX,
+            y: insetY,
+            width: size.width - insetX * 2,
+            height: size.height - insetY * 2
+        )
+        let corner = min(rect.width, rect.height) * (0.1 + 0.05 * amount)
+        let bow = min(rect.width, rect.height) * (0.012 + 0.035 * amount)
+
+        let left = rect.minX, right = rect.maxX, top = rect.minY, bottom = rect.maxY
+        let midX = rect.midX, midY = rect.midY
+
+        var path = Path()
+        path.move(to: CGPoint(x: left + corner, y: top))
+        path.addQuadCurve(to: CGPoint(x: right - corner, y: top), control: CGPoint(x: midX, y: top + bow))
+        path.addQuadCurve(to: CGPoint(x: right, y: top + corner), control: CGPoint(x: right, y: top))
+        path.addQuadCurve(to: CGPoint(x: right, y: bottom - corner), control: CGPoint(x: right - bow, y: midY))
+        path.addQuadCurve(to: CGPoint(x: right - corner, y: bottom), control: CGPoint(x: right, y: bottom))
+        path.addQuadCurve(to: CGPoint(x: left + corner, y: bottom), control: CGPoint(x: midX, y: bottom - bow))
+        path.addQuadCurve(to: CGPoint(x: left, y: bottom - corner), control: CGPoint(x: left, y: bottom))
+        path.addQuadCurve(to: CGPoint(x: left, y: top + corner), control: CGPoint(x: left + bow, y: midY))
+        path.addQuadCurve(to: CGPoint(x: left + corner, y: top), control: CGPoint(x: left, y: top))
+        path.closeSubpath()
+        return path
     }
 }
 
