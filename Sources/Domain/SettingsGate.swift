@@ -78,12 +78,19 @@ struct SettingsDraft: Equatable {
     /// Not part of `FeedSettings` and never part of `validated`: stepping it persists immediately,
     /// exactly like clearing the PIN, so there is nothing to commit.
     var tuneDelay: TuneDelay
+    /// CRT post-processing knobs. Same rules as `tuneDelay`: stepped and persisted at once.
+    var pictureEffects: PictureEffects
 
-    init(from settings: FeedSettings?, delay: TuneDelay = .standard) {
+    init(
+        from settings: FeedSettings?,
+        delay: TuneDelay = .standard,
+        effects: PictureEffects = .off
+    ) {
         self.feedURLText = settings?.feedURL.text ?? ""
         self.feedName = settings?.displayName ?? ""
         self.pinEdit = .unchanged
         self.tuneDelay = delay
+        self.pictureEffects = effects
     }
 
     /// Non-nil exactly when the draft is safe to persist. The view renders the URL field in CRT red
@@ -116,17 +123,26 @@ struct SettingsGate {
     /// The gate's own copy of the persisted delay, so a draft rebuilt after re-locking or
     /// re-entering shows the stepped value rather than the one the gate was born with.
     private var currentDelay: TuneDelay
+    /// Same lifetime as `currentDelay`: survives re-lock and re-entry without going stale.
+    private var currentEffects: PictureEffects
 
     private(set) var screen: SettingsScreen
 
-    init(pin: any PINOracle, current: FeedSettings?, delay: TuneDelay = .standard, now: Date) {
+    init(
+        pin: any PINOracle,
+        current: FeedSettings?,
+        delay: TuneDelay = .standard,
+        effects: PictureEffects = .off,
+        now: Date
+    ) {
         self.pin = pin
         self.current = current
         self.currentDelay = delay
+        self.currentEffects = effects
         if let length = pin.configuredLength {
             self.screen = .locked(PINChallenge(expectedLength: length))
         } else {
-            self.screen = .editing(SettingsDraft(from: current, delay: delay))
+            self.screen = .editing(SettingsDraft(from: current, delay: delay, effects: effects))
         }
     }
 
@@ -143,6 +159,8 @@ struct SettingsGate {
         /// The viewer clicked the tune-delay field: advance one detent and persist at once. Like
         /// clearing the PIN, this is not part of the committable draft.
         case delayStepped
+        /// The viewer clicked one CRT effect field: advance that knob one detent and persist.
+        case effectStepped(PictureEffectKind)
         /// The viewer finished editing a field.
         case commitRequested
     }
@@ -173,7 +191,7 @@ struct SettingsGate {
             if let length = pin.configuredLength {
                 screen = .locked(PINChallenge(expectedLength: length))
             } else {
-                screen = .editing(SettingsDraft(from: current, delay: currentDelay))
+                screen = .editing(SettingsDraft(from: current, delay: currentDelay, effects: currentEffects))
             }
             return effects
 
@@ -185,7 +203,7 @@ struct SettingsGate {
                 return []
             }
             if let candidate = PIN(digits: challenge.typed), pin.accepts(candidate) {
-                screen = .editing(SettingsDraft(from: current, delay: currentDelay))
+                screen = .editing(SettingsDraft(from: current, delay: currentDelay, effects: currentEffects))
             } else {
                 challenge.rejected(at: now)
                 screen = .locked(challenge)
@@ -221,12 +239,18 @@ struct SettingsGate {
             screen = .editing(draft)
             return [.persistDelay(draft.tuneDelay)]
 
+        case (.editing(var draft), let .effectStepped(kind)):
+            draft.pictureEffects = draft.pictureEffects.stepping(kind)
+            currentEffects = draft.pictureEffects
+            screen = .editing(draft)
+            return [.persistEffects(draft.pictureEffects)]
+
         case let (.editing(draft), .commitRequested):
             return commit(draft)
 
         case (.editing, .typed), (.editing, .backspace),
              (.locked, .draftChanged), (.locked, .pinEdited), (.locked, .commitRequested),
-             (.locked, .delayStepped):
+             (.locked, .delayStepped), (.locked, .effectStepped):
             return []
         }
     }
@@ -246,5 +270,6 @@ enum GateEffect: Equatable {
     /// `nil` clears the configured PIN.
     case persistPIN(PIN?)
     case persistDelay(TuneDelay)
+    case persistEffects(PictureEffects)
     case refetchFeed(FeedURL)
 }

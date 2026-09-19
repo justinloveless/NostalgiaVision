@@ -8,28 +8,31 @@ struct ChannelScreen: View {
     let tuned: TunedChannel
     let reception: Reception
     let feedName: String
+    let effects: PictureEffects
 
     @State private var showsChannelBug = true
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        PictureEffectsStage(effects: effects) {
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-            PlayerSurface(playerLayer: playerLayer)
-                .ignoresSafeArea()
+                PlayerSurface(playerLayer: playerLayer)
+                    .ignoresSafeArea()
 
-            if reception != .picture {
-                SnowView()
-            }
+                if reception != .picture {
+                    SnowView()
+                }
 
-            if case let .noSignal(signal) = reception {
-                caption(for: signal)
-            }
+                if case let .noSignal(signal) = reception {
+                    caption(for: signal)
+                }
 
-            // The number stays up for as long as there is no picture — a set with snow on it has
-            // nothing else to show — and otherwise flashes for a few seconds after a change.
-            if showsChannelBug || reception != .picture {
-                channelBug
+                // The number stays up for as long as there is no picture — a set with snow on it has
+                // nothing else to show — and otherwise flashes for a few seconds after a change.
+                if showsChannelBug || reception != .picture {
+                    channelBug
+                }
             }
         }
         .task(id: tuned.channel.id) {

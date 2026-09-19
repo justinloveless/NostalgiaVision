@@ -18,7 +18,13 @@ struct TVShellView: View {
                 // focus target is the channel screen itself, not the root: a focusable root spans
                 // the whole window, so on settings the focus engine would never descend into the
                 // control row and every control would look selected at once.
-                ChannelScreen(playerLayer: tv.playerLayer, tuned: tuned, reception: reception, feedName: tv.feedName)
+                ChannelScreen(
+                    playerLayer: tv.playerLayer,
+                    tuned: tuned,
+                    reception: reception,
+                    feedName: tv.feedName,
+                    effects: tv.pictureEffects
+                )
                     .focusable(true)
                     .focused($shellHasFocus)
 
