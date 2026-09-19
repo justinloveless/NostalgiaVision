@@ -5,6 +5,9 @@ import SwiftUI
 struct SnowView: View {
     private static let columns = 96
     private static let rows = 54
+    /// Peak cell brightness — the volume of the white-noise snow. Held at 20% so the static
+    /// stays present without blasting the screen between channels.
+    static let volume = 0.2
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0 / 12.0)) { context in
@@ -25,7 +28,7 @@ struct SnowView: View {
                             width: cellWidth + 1,
                             height: cellHeight + 1
                         )
-                        canvas.fill(Path(rect), with: .color(Color(white: level * 0.85)))
+                        canvas.fill(Path(rect), with: .color(Color(white: level * Self.volume)))
                     }
                 }
             }
