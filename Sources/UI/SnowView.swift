@@ -7,12 +7,24 @@ struct SnowView: View {
     /// stays present without blasting the screen between channels.
     static let volume = 0.2
 
+    /// Nothing to do with `volume` above, which is a pixel brightness.
+    var noiseVolume: EffectAmount = .medium
+
+    /// The snow's audio track rather than a second piece of state that shadows it. This view is
+    /// only ever mounted and unmounted by its caller's branches, so `onAppear`/`onDisappear`
+    /// already mean exactly "snow is on screen"; tracking that separately would be a copy of the
+    /// same fact, free to drift out of sync with the picture.
+    @State private var noise = NoiseAudioPlayer()
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0 / 12.0)) { context in
             frame(at: context.date)
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)
+        .onAppear { noise.start(volume: noiseVolume.value) }
+        .onDisappear { noise.stop() }
+        .onChange(of: noiseVolume) { _, newValue in noise.setVolume(newValue.value) }
     }
 
     private func frame(at date: Date) -> some View {
