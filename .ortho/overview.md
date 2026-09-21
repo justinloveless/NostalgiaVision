@@ -1,71 +1,86 @@
-# ORT-301: Noise effect jitter is too aggressive
+# ORT-301: Noise effect jitter and grain size
 
 ## Task
-The "NOISE" CRT picture-FX knob (`signalNoise`) makes the whole video jump around drastically.
-Separate the visual grain from the positional jitter it also drives, and tone the jitter down
-significantly.
+Two rounds on the "NOISE" CRT picture-FX knob (`signalNoise`):
+1. It made the whole video jump around drastically — separate the visual grain from the
+   positional jitter it also drives, and tone the jitter down significantly.
+2. Follow-up: shrink the visual grain/static "pixels" themselves, down to (but not below) the size
+   of a 420-line broadcast picture's pixels — for both the `signalNoise` grain and the separate
+   no-signal "snow" static screen.
 
 ## State: done, ready for review
 
-## Root cause
-`PictureEffectsStage.jitterOffset` had two independent problems, both in
-`Sources/UI/PictureEffectsStage.swift`:
-- **Modulo bias.** `Int64(bitPattern: s) % 1001` is a *signed* remainder. For roughly half the
-  random 64-bit seeds, `Int64(bitPattern: s)` is negative, and Swift's `%` returns a negative
-  result for a negative dividend. So each axis actually landed in `[-1.5, 0.5]`, not the intended
-  `[-0.5, 0.5]` — twice the intended spread, and biased about -0.5 on average instead of centered
-  on zero. Confirmed by simulating 200k draws of the exact formula: measured range `[-1.5, 0.5]`,
+## Round 1 — jitter root cause and fix
+`PictureEffectsStage.jitterOffset` (`Sources/UI/PictureEffectsStage.swift`) had two compounding
+bugs:
+- **Modulo bias.** `Int64(bitPattern: s) % 1001` is a signed remainder. For roughly half of all
+  random 64-bit seeds the dividend is negative, and Swift's `%` returns a negative result for a
+  negative dividend, so each axis actually landed in `[-1.5, 0.5]` (mean ≈ -0.5), not the intended
+  `[-0.5, 0.5]`. The picture wasn't randomly wobbling, it was being constantly pulled toward one
+  corner. Confirmed by simulating 200k draws of the exact formula: measured range `[-1.5, 0.5]`,
   mean `-0.50`.
-- **Same seed and cadence as the grain overlay.** The jitter offset and `SignalNoiseOverlay`'s
-  grain were driven by the same per-frame seed from a `TimelineView` redrawing at 24fps, so the
-  whole picture's position re-rolled 24 times a second at up to ±4pt per axis (further inflated by
-  the bias above). That reads as constant high-frequency shaking, not a loose antenna.
+- **Same seed and cadence as the grain overlay.** Both re-rolled on the same 24fps `TimelineView`
+  clock, at up to ±4pt/axis.
 
-Verified by replaying the exact production formula (before/after) over 5 simulated seconds at full
-strength in a throwaway Swift script (`swift /tmp/jitter-repro/verify.swift`, not part of the
-repo): before, mean magnitude 7.98pt with a constant ~(-3.9, -4.4)pt bias, changing almost every
-frame (119/120 transitions); after, mean magnitude 0.72pt centered near (0.04, -0.01), changing
-only 29/120 frames.
+Fix: unsigned bit-shift extraction (`(s >> 33) & 0xFFFF`) instead of the biased signed modulo;
+jitter now derives from its own seed, quantized to a new `jitterUpdatesPerSecond = 6.0` constant
+(holds position ~166ms instead of ~42ms); amplitude cut from `2.0 + 6.0 * amount.value` (max
+±4pt/axis) to `0.5 + 1.5 * amount.value` (max ±1pt/axis). `signalNoise` stays one knob — this
+decouples two *internal* behaviors, it doesn't add a second user-facing control.
 
-## What changed
-`Sources/UI/PictureEffectsStage.swift` only:
-- `jitterOffset` now derives `x`/`y` via unsigned bit-shifting (`(s >> 33) & 0xFFFF`), matching the
-  RNG pattern already used by `SignalNoiseOverlay` elsewhere in the file, instead of the biased
-  signed modulo.
-- Jitter's pixel range dropped from `2.0 + 6.0 * amount.value` (max ±4pt/axis) to
-  `0.5 + 1.5 * amount.value` (max ±1pt/axis).
-- The jitter offset and the grain overlay now derive from **separate seeds**: `noiseSeed` still
-  updates every frame (~24fps) for lively static; `jitterSeed` is quantized to a new
-  `jitterUpdatesPerSecond = 6.0` constant, so the picture's position holds for ~166ms before
-  re-rolling instead of every ~42ms. This is the literal "separate the visual noise from the
-  jitter" ask — they're independently tunable now, not just visually distinct overlays sharing one
-  clock.
+Verified by replaying the exact production formula, before/after, over 5 simulated seconds at full
+strength (`swift /tmp/jitter-repro/verify.swift`, throwaway, not in the repo): mean offset
+magnitude 7.98pt (biased ~(-3.9,-4.4)) → 0.72pt (centered ~(0.04,-0.01)); position changed on
+119/120 sampled frames → 29/120.
 
-No new `PictureEffectKind` or settings-UI change — the ask was to decouple and tone down an
-existing knob's two internal behaviors, not to expose a second control. `SignalNoiseOverlay` (the
-grain itself) is untouched.
+## Round 2 — grain/static pixel size
+Both `SignalNoiseOverlay` (`PictureEffectsStage.swift`) and `SnowView` (`SnowView.swift`, the
+separate no-signal channel screen) drew a coarse grid (64×36 and 96×54 respectively) as one Core
+Graphics `fill` per cell. Bumping the grid to 420 lines to get pixel-sized speckle would mean
+~747×420 ≈ 313k cells/frame — at that count, per-cell `canvas.fill` calls would blow the frame
+budget (SnowView redraws every cell every frame with no sparsity, at 12fps).
 
-## Key decisions
-- Kept `signalNoise` a single user-facing knob. The request was about internal coupling and
-  intensity, not about giving the user two dials.
-- No new unit test for `jitterOffset` — it's a `private` view-internal function with no existing
-  test precedent in this codebase (view-level pure functions here are verified by headless
-  rendering/simulation instead, matching ORT-300's approach), so a throwaway numeric repro script
-  was the appropriate verification tool rather than a permanent test.
+Added `Sources/UI/AnalogNoiseTexture.swift`: a shared `analogNoiseLines = 420` constant, an
+`analogNoiseColumns(aspect:)` helper (keeps cells square for any canvas aspect ratio), and
+`imageFromPremultipliedRGBA` (turns a raw byte buffer into one `CGImage`). Both views now write
+random bytes directly into a pixel buffer (no Core Graphics call per cell), build one `CGImage`,
+and blit it once with `.interpolation(.none)` so the upscale stays hard-edged instead of blurring
+cells together. `signalNoise`'s sparse-lighting behavior (only ~1/8 of cells lit, so the picture
+stays readable) and `SnowView`'s brightness-scaled-by-`volume` behavior are unchanged — same
+formulas, just density-correct at the new resolution.
+
+One real bug surfaced mid-implementation: nesting the new Canvas closure directly inside
+`TimelineView`'s trailing closure made the Swift type-checker fail with "generic parameter
+'Content' could not be inferred" — a known compiler limitation with heavily-bodied closures nested
+inside another `ViewBuilder` closure. Fixed by extracting `SnowView`'s Canvas into a private
+`frame(at:) -> some View` method (mirroring `PictureEffectsStage.stage(...)`, which already used
+this pattern for the same reason), so the type-checker checks each closure independently.
 
 ## Verification
-- `xcodegen generate` + `xcodebuild build` for the tvOS simulator: **build succeeded**.
-- `xcodebuild test -only-testing:NostalgiaVisionTests`: **99 tests, 0 failures**, both before and
-  after the fix.
-- Numeric before/after repro of the exact seed/amplitude/cadence formula (see Root cause) showing
-  the bias is gone and both magnitude and update frequency are down roughly 10x at full strength.
+- `xcodebuild build` for the tvOS simulator: **build succeeded**, both rounds.
+- `xcodebuild test -only-testing:NostalgiaVisionTests`: **99 tests, 0 failures**, after every
+  change.
+- Performance: benchmarked the exact new pixel-buffer builder standalone (`-O`, same seed/loop
+  logic, 240 simulated frames at 747×420) — 0.317ms/frame average, ~0.8% of a 24fps frame budget on
+  this Mac. Apple TV hardware is slower per-core, but this replaced an approach (300k+ Core
+  Graphics fill calls/frame) that would have been categorically worse, not just slower.
+- Visual: rendered the actual production byte-buffer-to-`CGImage` pipeline headlessly (raw
+  CoreGraphics, not SwiftUI) at both the old 64×36 grid and the new 420-line grid, composited onto
+  a full 1920×1080 backdrop, and inspected the PNGs directly — old grid shows clearly discrete
+  ~30px blocks, new grid shows fine ~2.5px speckle with no visible blur from the upscale.
+
+## Key decisions
+- Kept `signalNoise` a single user-facing knob throughout — both asks were about internal
+  coupling/intensity/resolution, not about exposing new controls.
+- `analogNoiseLines` is a shared top-level constant (not per-view) because the same "chunkiness of
+  a 420-line picture" is the right authenticity target for anything drawn as analog static in this
+  app, and the ask named both `signalNoise` and, implicitly, the "snow" static as a matched pair.
 
 ## Dependencies
-- Blocked by ORT-300 (bevel) — done, unaffected by this change (bevel sits later in the `ZStack`
-  and doesn't touch jitter or noise).
-- Blocks ORT-302 ("White noise whenever snow plays") — that task's "snow" static is a *separate*
-  implementation (`Sources/UI/SnowView.swift`, the no-signal channel screen), not this
-  `signalNoise` picture effect, so this change makes no assumptions on ORT-302's behalf.
+- Blocked by ORT-300 (bevel) — done, unaffected by either round of this change.
+- Blocks ORT-302 (white noise volume when snow plays) — `SnowView.swift` is a separate
+  implementation from the `signalNoise` picture effect; ORT-302 can proceed independently of
+  everything done here.
 
 ## Open items
 - None for this task.

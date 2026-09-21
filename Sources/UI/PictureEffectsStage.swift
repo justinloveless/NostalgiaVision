@@ -390,31 +390,31 @@ private struct SignalNoiseOverlay: View {
     let amount: EffectAmount
     let seed: UInt64
 
-    private static let columns = 64
-    private static let rows = 36
-
     var body: some View {
         Canvas(opaque: false, rendersAsynchronously: true) { canvas, size in
-            var s = seed | 1
-            let cellWidth = size.width / CGFloat(Self.columns)
-            let cellHeight = size.height / CGFloat(Self.rows)
-            let opacity = 0.04 + 0.14 * amount.value
+            guard size.width > 0, size.height > 0 else { return }
+            let rows = analogNoiseLines
+            let columns = analogNoiseColumns(aspect: size.width / size.height)
+            let alphaByte = UInt8(clamping: Int(((0.04 + 0.14 * amount.value) * 255).rounded()))
 
-            for row in 0..<Self.rows {
-                for column in 0..<Self.columns {
-                    s = s &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-                    let level = Double((s >> 33) & 0xFF) / 255.0
-                    // Sparse: only light a fraction of cells so the picture stays readable.
-                    guard ((s >> 8) & 0x7) == 0 else { continue }
-                    let rect = CGRect(
-                        x: CGFloat(column) * cellWidth,
-                        y: CGFloat(row) * cellHeight,
-                        width: cellWidth + 1,
-                        height: cellHeight + 1
-                    )
-                    canvas.fill(Path(rect), with: .color(Color(white: level, opacity: opacity)))
-                }
+            var s = seed | 1
+            var pixels = [UInt8](repeating: 0, count: columns * rows * 4)
+            for i in 0..<(columns * rows) {
+                s = s &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+                // Sparse: only light a fraction of cells so the picture stays readable.
+                guard ((s >> 8) & 0x7) == 0 else { continue }
+                let level = UInt8((s >> 33) & 0xFF)
+                let premultiplied = UInt8((UInt16(level) * UInt16(alphaByte)) / 255)
+                let base = i * 4
+                pixels[base] = premultiplied
+                pixels[base + 1] = premultiplied
+                pixels[base + 2] = premultiplied
+                pixels[base + 3] = alphaByte
             }
+
+            guard let image = imageFromPremultipliedRGBA(pixels, columns: columns, rows: rows) else { return }
+            let swiftUIImage = Image(decorative: image, scale: 1, orientation: .up).interpolation(.none)
+            canvas.draw(swiftUIImage, in: CGRect(origin: .zero, size: size))
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
