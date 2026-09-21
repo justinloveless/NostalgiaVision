@@ -14,18 +14,18 @@ enum SetupPalette {
 
 /// The one slot in the cycle that is not a channel.
 ///
-/// Two layouts, because the dial is held in one state and not the other (`TVSet.dialAcceptsInput`,
-/// derived from `SettingsScreen.dialAcceptsInput`). Locked, up/down still tunes, so nothing on that
-/// screen may consume vertical movement: the keypad stays a single horizontal strip and a viewer
-/// who does not have the PIN can always turn away. That constraint is load-bearing and permanent.
-/// Unlocked, the dial is held, so vertical belongs to the menu instead and the way back to a
-/// channel has to be on screen: the EXIT TO TV row. Drop that row and the viewer is stranded on
-/// everything but tvOS's Menu button.
+/// Three layouts, because the dial is held in exactly one of the three (`TVSet`'s gate, derived from
+/// `SettingsScreen.dialAcceptsInput`). Locked and landing both show a single, low-stakes control — a
+/// keypad, a button — and leave up/down free to tune away, so dialing onto the settings slot never
+/// captures the remote by surprise, with or without a PIN configured. Only pressing EDIT SETTINGS (or
+/// typing a correct PIN, which skips landing entirely) commits to `.editing`, which holds the dial for
+/// its own vertical menu. BACK at the root of that menu sends `.backRequested`, handing the dial back
+/// without leaving the settings slot; tvOS's Menu button still leaves the slot entirely from any of
+/// the three, exactly as it always has.
 struct SettingsScreenView: View {
     let screen: SettingsScreen
     let trouble: FeedTrouble?
     let send: (SettingsGate.Event) -> Void
-    let onExit: () -> Void
 
     @State private var editingField: EditableField?
     @State private var panel: Panel = .root
@@ -106,6 +106,13 @@ struct SettingsScreenView: View {
                 onBackspace: { send(.backspace) }
             )
 
+        case .landing:
+            // A single deliberate act, so landing on the settings slot mid-surf never captures the
+            // remote on its own — the viewer has to ask for the menu before up/down stops tuning.
+            Button(action: { send(.enterEditing) }) {
+                LandingButtonLabel(title: "EDIT SETTINGS")
+            }
+
         case let .editing(draft):
             // Capped rather than full-bleed: across 1920pt a row's title and its value end up at
             // opposite edges of the screen with nothing between them to read across. The locked
@@ -163,7 +170,7 @@ struct SettingsScreenView: View {
                     .padding(.top, 18)
                     .padding(.horizontal, 28)
 
-                row(title: "EXIT TO TV", value: "CHANNEL", isValid: true) { onExit() }
+                row(title: "BACK", value: "SET-UP", isValid: true) { send(.backRequested) }
             }
 
         case let .pinEntry(entry):
@@ -249,6 +256,22 @@ struct SettingsScreenView: View {
         private var valueColor: Color {
             guard isValid else { return .red }
             return isFocused ? SetupPalette.focusedAccent : SetupPalette.accent
+        }
+    }
+
+    /// The landing screen's one control. Larger and centred rather than a `RowLabel`, since there is
+    /// nothing beside it to align a value column against.
+    private struct LandingButtonLabel: View {
+        let title: String
+
+        @Environment(\.isFocused) private var isFocused
+
+        var body: some View {
+            Text(title)
+                .font(.system(size: 30, weight: .bold, design: .monospaced))
+                .foregroundStyle(isFocused ? Color.black.opacity(0.85) : .white)
+                .padding(.vertical, 22)
+                .padding(.horizontal, 56)
         }
     }
 

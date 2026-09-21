@@ -31,14 +31,10 @@ struct TVShellView: View {
                     .focused($shellHasFocus)
 
             case let .settings(screen, trouble):
-                // Locked, it is one horizontal strip that leaves up/down to the dial. Unlocked, the
-                // dial is held and the menu owns up/down, so it needs its own way out.
-                SettingsScreenView(
-                    screen: screen,
-                    trouble: trouble,
-                    send: { event in tv.settings(event) },
-                    onExit: { tv.leaveSettings() }
-                )
+                // Locked or landing, it is one control that leaves up/down to the dial. Editing, the
+                // dial is held and the menu owns up/down; BACK at its root hands the dial back without
+                // leaving the settings slot (`SettingsGate.Event.backRequested`).
+                SettingsScreenView(screen: screen, trouble: trouble) { event in tv.settings(event) }
             }
         }
         // A sibling of the screen, not part of it: the bar names where the knob is pointing, which
