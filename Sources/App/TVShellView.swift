@@ -49,7 +49,7 @@ struct TVShellView: View {
         }
         // Installed only on settings: on a channel the system must keep Menu so it can exit to the
         // Home screen, which is what a TV set does when you turn it off.
-        .onExitCommand(perform: isShowingSettings ? { tv.pressedMenu() } : nil)
+        .onExitCommand(perform: isShowingSettings ? { tv.leaveSettings() } : nil)
         .onChange(of: scenePhase) { _, phase in
             // If the shell ever loses focus the remote goes dead, so re-assert it on re-entry.
             if phase == .active { shellHasFocus = true }

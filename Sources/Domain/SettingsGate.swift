@@ -19,6 +19,19 @@ enum SettingsScreen: Equatable {
     case editing(SettingsDraft)
 }
 
+extension SettingsScreen {
+    /// True while up/down should still tune the dial away from settings — the `.locked` screen's
+    /// safety net for a viewer who may not have the PIN. Once `.editing`, the dial is held: up/down
+    /// belongs to settings navigation instead, until the viewer explicitly leaves (see
+    /// `TVSet.leaveSettings()`).
+    var dialAcceptsInput: Bool {
+        switch self {
+        case .locked: return true
+        case .editing: return false
+        }
+    }
+}
+
 /// The locked half. Holds only what the keypad needs.
 struct PINChallenge: Equatable {
     /// Never longer than the configured PIN length; the state machine submits and clears on the

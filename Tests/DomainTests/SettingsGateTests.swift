@@ -54,6 +54,18 @@ final class SettingsGateTests: XCTestCase {
         XCTAssertEqual(challenge(of: gate)?.typed.count, 0)
     }
 
+    func testALockedScreenLeavesTheDialFreeToTuneAway() {
+        let gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: nil, now: now)
+
+        XCTAssertTrue(gate.screen.dialAcceptsInput)
+    }
+
+    func testAnUnlockedScreenHoldsTheDialForItsOwnNavigation() {
+        let gate = SettingsGate(pin: StubPIN(pin: nil), current: settings("https://tunarr.local/a.m3u"), now: now)
+
+        XCTAssertFalse(gate.screen.dialAcceptsInput)
+    }
+
     func testCorrectPINUnlocksIntoEditing() {
         var gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: settings("https://tunarr.local/a.m3u"), now: now)
 

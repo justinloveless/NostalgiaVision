@@ -107,12 +107,22 @@ final class TVSet {
         startRefresh(from: settings.feedURL)
     }
 
+    /// Whether `turn(_:)` may move the dial right now. Derived from `screen` — the same value the
+    /// root view renders — so what's on screen and what up/down does can never disagree. `true`
+    /// everywhere except an unlocked settings screen, which has taken over up/down for its own
+    /// navigation.
+    private var dialAcceptsInput: Bool {
+        guard case let .settings(settingsScreen, _) = screen else { return true }
+        return settingsScreen.dialAcceptsInput
+    }
+
     /// Moves the knob immediately and schedules the actual switch for once it sits still for the
     /// configured `TuneDelay`. Cancels any pending settle, so fast surfing starts exactly one
     /// stream. Nothing else happens here: the picture, the gate and the store are all the business
     /// of `settle()`.
     func turn(_ direction: TuneDirection) {
         hasResumed = true
+        guard dialAcceptsInput else { return }
         dial.turn(direction)
         scheduleSettle()
     }
@@ -149,13 +159,17 @@ final class TVSet {
         }
     }
 
-    /// Menu button. Only installed while settings is on screen, so on a channel the system handles
-    /// it and exits to the Home screen — which is the correct behaviour for a TV set.
+    /// The only way out of an unlocked settings screen: `dialAcceptsInput` holds the dial there, so
+    /// up/down no longer carries the viewer away. tvOS's Menu button is the one caller today, and
+    /// an in-UI exit affordance will be the second; both mean the same thing, so this reads as
+    /// "leave" rather than "a particular button was pressed".
     ///
-    /// The guard is on `dial.live`, not `dial.position`, for exactly that reason. With a preview
-    /// already pending — the knob has moved off settings while settings is still what's airing —
-    /// Menu commits that preview rather than jumping back to `lastTuned`.
-    func pressedMenu() {
+    /// The guard is on `dial.live`, not `dial.position`, because Menu is installed only while
+    /// settings is airing — on a channel the system keeps it and exits to the Home screen, which is
+    /// the correct behaviour for a TV set. With a preview already pending — the knob has moved off
+    /// settings while settings is still what's airing — leaving commits that preview rather than
+    /// jumping back to `lastTuned`.
+    func leaveSettings() {
         guard dial.live == .settings else { return }
         if dial.preview == nil { dial.resume(store.persisted.lastTuned) }
         settle()
