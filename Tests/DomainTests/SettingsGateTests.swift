@@ -348,6 +348,147 @@ final class SettingsGateTests: XCTestCase {
         XCTAssertEqual(draft(of: gate)?.pictureEffects, stepped)
     }
 
+    func testTheNoiseVolumeAndTransitionDefaultToTheirStandardsWhenTheCallerSuppliesNeither() {
+        let gate = SettingsGate(pin: StubPIN(pin: nil), current: nil, now: now)
+
+        XCTAssertEqual(draft(of: gate)?.noiseVolume, .medium)
+        XCTAssertEqual(draft(of: gate)?.transitionEffect, .standard)
+    }
+
+    func testSteppingTheNoiseVolumeUpdatesTheDraftAndPersistsAtOnce() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            noiseVolume: .medium,
+            now: now
+        )
+
+        let effects = gate.apply(.noiseVolumeStepped, now: now)
+
+        XCTAssertEqual(effects, [.persistNoiseVolume(EffectAmount.medium.stepped())])
+        XCTAssertEqual(draft(of: gate)?.noiseVolume, EffectAmount.medium.stepped())
+    }
+
+    func testSteppingTheNoiseVolumeNeverTouchesTheCommittableSettings() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            noiseVolume: .medium,
+            now: now
+        )
+
+        gate.apply(.noiseVolumeStepped, now: now)
+
+        XCTAssertEqual(draft(of: gate)?.validated, settings("https://tunarr.local/a.m3u"))
+        XCTAssertTrue(gate.apply(.commitRequested, now: now).isEmpty, "the noise volume is not feed settings")
+    }
+
+    func testSteppingTheNoiseVolumeWhileLockedIsANoOp() {
+        var gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: nil, noiseVolume: .medium, now: now)
+
+        XCTAssertTrue(gate.apply(.noiseVolumeStepped, now: now).isEmpty)
+        XCTAssertNil(draft(of: gate))
+    }
+
+    func testLeavingSettingsReseedsTheDraftWithTheSteppedNoiseVolume() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            noiseVolume: .medium,
+            now: now
+        )
+        gate.apply(.noiseVolumeStepped, now: now)
+        let stepped = EffectAmount.medium.stepped()
+
+        gate.apply(.leftSettings, now: now)
+
+        XCTAssertEqual(draft(of: gate)?.noiseVolume, stepped)
+    }
+
+    func testUnlockingAfterSteppingTheNoiseVolumeShowsTheSteppedValue() {
+        var gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: nil, noiseVolume: .medium, now: now)
+        type("4821", into: &gate)
+        gate.apply(.noiseVolumeStepped, now: now)
+        let stepped = EffectAmount.medium.stepped()
+
+        gate.apply(.leftSettings, now: now)
+        type("4821", into: &gate)
+
+        XCTAssertEqual(draft(of: gate)?.noiseVolume, stepped)
+    }
+
+    func testSteppingTheTransitionEffectUpdatesTheDraftAndPersistsAtOnce() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            transitionEffect: .standard,
+            now: now
+        )
+
+        let effects = gate.apply(.transitionEffectStepped, now: now)
+
+        XCTAssertEqual(effects, [.persistTransitionEffect(TransitionEffect.standard.stepped())])
+        XCTAssertEqual(draft(of: gate)?.transitionEffect, TransitionEffect.standard.stepped())
+    }
+
+    func testSteppingTheTransitionEffectNeverTouchesTheCommittableSettings() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            transitionEffect: .standard,
+            now: now
+        )
+
+        gate.apply(.transitionEffectStepped, now: now)
+
+        XCTAssertEqual(draft(of: gate)?.validated, settings("https://tunarr.local/a.m3u"))
+        XCTAssertTrue(gate.apply(.commitRequested, now: now).isEmpty, "the transition is not feed settings")
+    }
+
+    func testSteppingTheTransitionEffectWhileLockedIsANoOp() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: pin("4821")),
+            current: nil,
+            transitionEffect: .standard,
+            now: now
+        )
+
+        XCTAssertTrue(gate.apply(.transitionEffectStepped, now: now).isEmpty)
+        XCTAssertNil(draft(of: gate))
+    }
+
+    func testLeavingSettingsReseedsTheDraftWithTheSteppedTransitionEffect() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: nil),
+            current: settings("https://tunarr.local/a.m3u"),
+            transitionEffect: .standard,
+            now: now
+        )
+        gate.apply(.transitionEffectStepped, now: now)
+        let stepped = TransitionEffect.standard.stepped()
+
+        gate.apply(.leftSettings, now: now)
+
+        XCTAssertEqual(draft(of: gate)?.transitionEffect, stepped)
+    }
+
+    func testUnlockingAfterSteppingTheTransitionEffectShowsTheSteppedValue() {
+        var gate = SettingsGate(
+            pin: StubPIN(pin: pin("4821")),
+            current: nil,
+            transitionEffect: .standard,
+            now: now
+        )
+        type("4821", into: &gate)
+        gate.apply(.transitionEffectStepped, now: now)
+        let stepped = TransitionEffect.standard.stepped()
+
+        gate.apply(.leftSettings, now: now)
+        type("4821", into: &gate)
+
+        XCTAssertEqual(draft(of: gate)?.transitionEffect, stepped)
+    }
+
     func testLockedScreenIgnoresDraftAndCommitEvents() {
         var gate = SettingsGate(pin: StubPIN(pin: pin("4821")), current: nil, now: now)
         var forged = SettingsDraft(from: nil)
