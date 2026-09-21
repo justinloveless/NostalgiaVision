@@ -280,6 +280,15 @@ private func cushionPath(in rect: CGRect, corner: CGFloat, bow: CGFloat) -> Path
     return path
 }
 
+/// The band of canvas `BevelOverlay` paints its cabinet over, at a given bevel strength. Content that
+/// wants to stay clear of the wood should inset by this — one formula, so retuning the cabinet can
+/// never silently leave content stranded behind it.
+func cabinetInsets(bevel: PictureEffect) -> EdgeInsets {
+    guard bevel.isEnabled else { return EdgeInsets() }
+    let thickness = 16 + 104 * bevel.amount.value
+    return EdgeInsets(top: thickness * 0.8, leading: thickness, bottom: thickness * 1.25, trailing: thickness)
+}
+
 /// An opaque cabinet painted over the outer band of the canvas with a cushion-shaped hole the
 /// picture shows through. Nothing is warped or resized; the set is simply in front of the tube.
 private struct BevelOverlay: View {
@@ -290,9 +299,10 @@ private struct BevelOverlay: View {
 
     var body: some View {
         Canvas { canvas, size in
-            let thickness = 16 + 104 * CGFloat(amount.value)
-            let topInset = thickness * 0.8
-            let bottomInset = thickness * 1.25
+            let insets = cabinetInsets(bevel: PictureEffect(amount: amount))
+            let thickness = insets.leading
+            let topInset = insets.top
+            let bottomInset = insets.bottom
             let cutoutRect = CGRect(
                 x: thickness,
                 y: topInset,
