@@ -80,17 +80,27 @@ struct SettingsDraft: Equatable {
     var tuneDelay: TuneDelay
     /// CRT post-processing knobs. Same rules as `tuneDelay`: stepped and persisted at once.
     var pictureEffects: PictureEffects
+    /// Loudness of the tuning-in noise bed. Same rules as `tuneDelay`: stepped and persisted at
+    /// once, never part of `validated`.
+    var noiseVolume: EffectAmount
+    /// What the screen shows while a channel tunes in. Same rules as `tuneDelay`: stepped and
+    /// persisted at once, never part of `validated`.
+    var transitionEffect: TransitionEffect
 
     init(
         from settings: FeedSettings?,
         delay: TuneDelay = .standard,
-        effects: PictureEffects = .off
+        effects: PictureEffects = .off,
+        noiseVolume: EffectAmount = .medium,
+        transitionEffect: TransitionEffect = .standard
     ) {
         self.feedURLText = settings?.feedURL.text ?? ""
         self.feedName = settings?.displayName ?? ""
         self.pinEdit = .unchanged
         self.tuneDelay = delay
         self.pictureEffects = effects
+        self.noiseVolume = noiseVolume
+        self.transitionEffect = transitionEffect
     }
 
     /// Non-nil exactly when the draft is safe to persist. The view renders the URL field in CRT red
@@ -125,6 +135,10 @@ struct SettingsGate {
     private var currentDelay: TuneDelay
     /// Same lifetime as `currentDelay`: survives re-lock and re-entry without going stale.
     private var currentEffects: PictureEffects
+    /// Same lifetime as `currentDelay`.
+    private var currentNoiseVolume: EffectAmount
+    /// Same lifetime as `currentDelay`.
+    private var currentTransitionEffect: TransitionEffect
 
     private(set) var screen: SettingsScreen
 
@@ -133,16 +147,26 @@ struct SettingsGate {
         current: FeedSettings?,
         delay: TuneDelay = .standard,
         effects: PictureEffects = .off,
+        noiseVolume: EffectAmount = .medium,
+        transitionEffect: TransitionEffect = .standard,
         now: Date
     ) {
         self.pin = pin
         self.current = current
         self.currentDelay = delay
         self.currentEffects = effects
+        self.currentNoiseVolume = noiseVolume
+        self.currentTransitionEffect = transitionEffect
         if let length = pin.configuredLength {
             self.screen = .locked(PINChallenge(expectedLength: length))
         } else {
-            self.screen = .editing(SettingsDraft(from: current, delay: delay, effects: effects))
+            self.screen = .editing(SettingsDraft(
+                from: current,
+                delay: delay,
+                effects: effects,
+                noiseVolume: noiseVolume,
+                transitionEffect: transitionEffect
+            ))
         }
     }
 
@@ -161,6 +185,12 @@ struct SettingsGate {
         case delayStepped
         /// The viewer clicked one CRT effect field: advance that knob one detent and persist.
         case effectStepped(PictureEffectKind)
+        /// The viewer clicked the noise-volume field: advance one detent and persist. `.off` is a
+        /// detent on that ladder, so this is also how the noise bed gets muted.
+        case noiseVolumeStepped
+        /// The viewer clicked the transition field: advance to the next transition effect and
+        /// persist. Also not part of the committable draft.
+        case transitionEffectStepped
         /// The viewer finished editing a field.
         case commitRequested
     }
@@ -191,7 +221,13 @@ struct SettingsGate {
             if let length = pin.configuredLength {
                 screen = .locked(PINChallenge(expectedLength: length))
             } else {
-                screen = .editing(SettingsDraft(from: current, delay: currentDelay, effects: currentEffects))
+                screen = .editing(SettingsDraft(
+                    from: current,
+                    delay: currentDelay,
+                    effects: currentEffects,
+                    noiseVolume: currentNoiseVolume,
+                    transitionEffect: currentTransitionEffect
+                ))
             }
             return effects
 
@@ -203,7 +239,13 @@ struct SettingsGate {
                 return []
             }
             if let candidate = PIN(digits: challenge.typed), pin.accepts(candidate) {
-                screen = .editing(SettingsDraft(from: current, delay: currentDelay, effects: currentEffects))
+                screen = .editing(SettingsDraft(
+                    from: current,
+                    delay: currentDelay,
+                    effects: currentEffects,
+                    noiseVolume: currentNoiseVolume,
+                    transitionEffect: currentTransitionEffect
+                ))
             } else {
                 challenge.rejected(at: now)
                 screen = .locked(challenge)
@@ -245,12 +287,25 @@ struct SettingsGate {
             screen = .editing(draft)
             return [.persistEffects(draft.pictureEffects)]
 
+        case (.editing(var draft), .noiseVolumeStepped):
+            draft.noiseVolume = draft.noiseVolume.stepped()
+            currentNoiseVolume = draft.noiseVolume
+            screen = .editing(draft)
+            return [.persistNoiseVolume(draft.noiseVolume)]
+
+        case (.editing(var draft), .transitionEffectStepped):
+            draft.transitionEffect = draft.transitionEffect.stepped()
+            currentTransitionEffect = draft.transitionEffect
+            screen = .editing(draft)
+            return [.persistTransitionEffect(draft.transitionEffect)]
+
         case let (.editing(draft), .commitRequested):
             return commit(draft)
 
         case (.editing, .typed), (.editing, .backspace),
              (.locked, .draftChanged), (.locked, .pinEdited), (.locked, .commitRequested),
-             (.locked, .delayStepped), (.locked, .effectStepped):
+             (.locked, .delayStepped), (.locked, .effectStepped),
+             (.locked, .noiseVolumeStepped), (.locked, .transitionEffectStepped):
             return []
         }
     }
@@ -271,5 +326,7 @@ enum GateEffect: Equatable {
     case persistPIN(PIN?)
     case persistDelay(TuneDelay)
     case persistEffects(PictureEffects)
+    case persistNoiseVolume(EffectAmount)
+    case persistTransitionEffect(TransitionEffect)
     case refetchFeed(FeedURL)
 }

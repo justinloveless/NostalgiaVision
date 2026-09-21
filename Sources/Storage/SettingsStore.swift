@@ -16,6 +16,13 @@ struct PersistedState: Equatable {
     /// CRT post-processing knobs. Same lifetime rules as `tuneDelay`: legal before any feed is
     /// configured, survives feed replacement, and is never part of the committable draft.
     var pictureEffects: PictureEffects = .off
+    /// Loudness of the tuning-in noise bed. Unlike the seven CRT knobs, absent does NOT mean off:
+    /// the standard analog behaviour is audible, so silence has to be something the viewer chose
+    /// rather than something an upgrade decided for them.
+    var noiseVolume: EffectAmount = .medium
+    /// Same absent-means-standard rule as `noiseVolume`: snow is what an install that never saw
+    /// this setting already shows while a channel tunes in.
+    var transitionEffect: TransitionEffect = .standard
 }
 
 /// The only file in the app containing a `UserDefaults` key string.
@@ -36,6 +43,8 @@ final class SettingsStore {
         static let glowBloom = "nostalgiavision.fx.glowBloom"
         static let signalNoise = "nostalgiavision.fx.signalNoise"
         static let bevel = "nostalgiavision.fx.bevel"
+        static let noiseVolume = "nostalgiavision.noise.volume"
+        static let transitionEffect = "nostalgiavision.transition.effect"
     }
 
     private let defaults: UserDefaults
@@ -62,11 +71,16 @@ final class SettingsStore {
                 signalNoise: effect(forKey: Key.signalNoise),
                 bevel: effect(forKey: Key.bevel)
             )
+            let noiseVolume = amount(forKey: Key.noiseVolume) ?? .medium
+            let transitionEffect = defaults.string(forKey: Key.transitionEffect)
+                .flatMap(TransitionEffect.init(rawValue:)) ?? .standard
             return PersistedState(
                 settings: settings,
                 lastTuned: lastTuned,
                 tuneDelay: tuneDelay,
-                pictureEffects: pictureEffects
+                pictureEffects: pictureEffects,
+                noiseVolume: noiseVolume,
+                transitionEffect: transitionEffect
             )
         }
         set {
@@ -95,14 +109,27 @@ final class SettingsStore {
             write(newValue.pictureEffects.glowBloom, forKey: Key.glowBloom, was: current.pictureEffects.glowBloom)
             write(newValue.pictureEffects.signalNoise, forKey: Key.signalNoise, was: current.pictureEffects.signalNoise)
             write(newValue.pictureEffects.bevel, forKey: Key.bevel, was: current.pictureEffects.bevel)
+            if current.noiseVolume != newValue.noiseVolume {
+                defaults.set(newValue.noiseVolume.value, forKey: Key.noiseVolume)
+            }
+            if current.transitionEffect != newValue.transitionEffect {
+                defaults.set(newValue.transitionEffect.rawValue, forKey: Key.transitionEffect)
+            }
         }
+    }
+
+    /// `nil` for an absent or corrupt key, so each caller states its own fallback. The presence
+    /// check is load-bearing: `double(forKey:)` answers `0` for a key that was never written and
+    /// `0` is itself a legal amount, so without it a fresh install reads as deliberately silenced
+    /// rather than unconfigured.
+    private func amount(forKey key: String) -> EffectAmount? {
+        guard defaults.object(forKey: key) != nil else { return nil }
+        return EffectAmount(value: defaults.double(forKey: key))
     }
 
     /// Absent or corrupt keys mean off — upgrading an install that never saw FX writes nothing.
     private func effect(forKey key: String) -> PictureEffect {
-        guard defaults.object(forKey: key) != nil else { return .off }
-        let raw = defaults.double(forKey: key)
-        return PictureEffect(amount: EffectAmount(value: raw) ?? .off)
+        PictureEffect(amount: amount(forKey: key) ?? .off)
     }
 
     private func write(_ effect: PictureEffect, forKey key: String, was prior: PictureEffect) {

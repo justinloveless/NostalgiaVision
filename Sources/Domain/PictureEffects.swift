@@ -1,6 +1,7 @@
 import Foundation
 
-/// Discrete strength for one CRT knob. `0` is off; every detent above that is on at that strength.
+/// Discrete strength for one knob — a CRT effect or an audio level. `0` is off; every detent above
+/// that is on at that strength.
 ///
 /// Constructible only through the failable initializer (the persistence boundary) or `stepped()`,
 /// so every amount in memory is already known-valid.
