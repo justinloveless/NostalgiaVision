@@ -69,12 +69,42 @@ this pattern for the same reason), so the type-checker checks each closure indep
   a full 1920×1080 backdrop, and inspected the PNGs directly — old grid shows clearly discrete
   ~30px blocks, new grid shows fine ~2.5px speckle with no visible blur from the upscale.
 
+## Round 3 — unrelated build failure in Xcode GUI
+User reported the build failing in Xcode with 7 issues, the first being "Missing package product
+'KSPlayer'" and the other six being `Cannot find 'analogNoiseLines'/'analogNoiseColumns'/
+'imageFromPremultipliedRGBA' in scope` in `PictureEffectsStage`/`SnowView`. Not a code bug: those
+six are the cascading symptom of the first — when a package dependency fails to resolve, Xcode
+can't build the module and reports every cross-file symbol as unresolved, including ones that are
+fine. Reproduced independently: two full clean builds from a wiped `DerivedData` via command-line
+`xcodebuild` both succeeded with zero errors, so the Swift sources were never broken.
+
+Root cause: `project.yml` pinned `KSPlayer` to `branch: main`, a floating reference that
+re-resolves over the network on every Xcode open/build. User tried Reset Package Caches + Resolve
+Package Versions in Xcode and the GUI build still failed — a network/resolution hiccup specific to
+that floating pin, not to the code.
+
+Fix: pinned `KSPlayer` to the exact `revision` that `main` already resolved to
+(`75e590e770f7f01d088ced2546deed9817b660ae`, confirmed still `main`'s current tip via
+`git ls-remote` at pin time, and the exact commit this codebase had already built against). A
+revision pin is immutable and needs no re-resolution against a moving target, which removes the
+failure mode entirely, and picking the commit already proven to compile means zero API-drift risk
+— unlike jumping to the latest tagged release (`2.3.4`), which could be arbitrarily far from `main`
+and require unrelated source changes.
+
+Verified: wiped `DerivedData` and the generated `.xcodeproj` again, ran `xcodegen generate`, then a
+clean `xcodebuild build` — package resolution logged `Fetching ... (cached)` / `Resolved source
+packages` with no errors, build succeeded, and the checked-in-by-Xcode `Package.resolved` now shows
+a fixed `revision` with no `branch` key. Full `NostalgiaVisionTests` run: 99/99 still passing.
+
 ## Key decisions
 - Kept `signalNoise` a single user-facing knob throughout — both asks were about internal
   coupling/intensity/resolution, not about exposing new controls.
 - `analogNoiseLines` is a shared top-level constant (not per-view) because the same "chunkiness of
   a 420-line picture" is the right authenticity target for anything drawn as analog static in this
   app, and the ask named both `signalNoise` and, implicitly, the "snow" static as a matched pair.
+- Pinned KSPlayer to a `revision`, not a `version`/`exactVersion` tag — the goal was removing the
+  floating-reference fragility with zero behavior change, not adopting a different upstream release
+  (that's a separate decision the user didn't ask for here).
 
 ## Dependencies
 - Blocked by ORT-300 (bevel) — done, unaffected by either round of this change.

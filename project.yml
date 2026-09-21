@@ -6,7 +6,11 @@ options:
 packages:
   KSPlayer:
     url: https://github.com/kingslay/KSPlayer.git
-    branch: main
+    # Pinned to the exact commit `main` resolved to as of 2026-09-21 (still its current tip at the
+    # time of pinning) rather than the floating branch: a branch reference re-resolves over the
+    # network on every open/build, and any hiccup there was the actual cause of the "Missing
+    # package product" build failure — the Swift sources themselves were never the problem.
+    revision: 75e590e770f7f01d088ced2546deed9817b660ae
 targets:
   NostalgiaVision:
     type: application
