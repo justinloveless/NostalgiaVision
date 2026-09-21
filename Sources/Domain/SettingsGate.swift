@@ -3,7 +3,7 @@ import Foundation
 /// A yes/no oracle over the configured PIN, so the gate never holds a comparable PIN of its own.
 /// `PINKeychain` is the production conformance; tests supply a literal one.
 protocol PINOracle {
-    /// `nil` when no PIN is configured, in which case the gate opens straight into `.editing` —
+    /// `nil` when no PIN is configured, in which case the gate opens straight onto `.landing` —
     /// first run and "the viewer cleared the PIN" are the same code path, not two.
     var configuredLength: Int? { get }
     func accepts(_ candidate: PIN) -> Bool
@@ -14,19 +14,29 @@ protocol PINOracle {
 /// This enum is the entire access-control mechanism. There is no `isUnlocked` anywhere in the
 /// codebase, because the editable draft does not *exist* in the locked case — a view cannot render
 /// a field it has no data for, and cannot forget a check it was never offered.
+///
+/// Three states, not two, because "past the PIN" and "actively editing" are different questions.
+/// `.landing` and `.locked` both show a single, low-stakes control (a button, a keypad) and leave
+/// up/down free to tune away, so dialing onto the settings slot — with or without a PIN configured —
+/// never captures the remote by surprise. Only `.editing`, entered deliberately via `.enterEditing`,
+/// takes over up/down for its own menu.
 enum SettingsScreen: Equatable {
     case locked(PINChallenge)
+    /// Unlocked, not yet editing. Reached on first entry when no PIN is configured, and again every
+    /// time the viewer backs out of `.editing` without one — landing here rather than straight back
+    /// into `.editing` is what keeps "no PIN configured" from meaning "always captured".
+    case landing(SettingsDraft)
     case editing(SettingsDraft)
 }
 
 extension SettingsScreen {
-    /// True while up/down should still tune the dial away from settings — the `.locked` screen's
-    /// safety net for a viewer who may not have the PIN. Once `.editing`, the dial is held: up/down
-    /// belongs to settings navigation instead, until the viewer explicitly leaves (see
-    /// `TVSet.leaveSettings()`).
+    /// True while up/down should still tune the dial away from settings. `.locked` and `.landing`
+    /// are both single-control screens with nothing to navigate, so the dial stays free until the
+    /// viewer deliberately opts into `.editing` — at which point up/down belongs to the menu instead,
+    /// until `TVSet.settings(.backRequested)` or leaving settings entirely hands it back.
     var dialAcceptsInput: Bool {
         switch self {
-        case .locked: return true
+        case .locked, .landing: return true
         case .editing: return false
         }
     }
@@ -139,7 +149,8 @@ enum PINEdit: Equatable {
 /// `GateEffect`s and the shell performs them.
 ///
 /// The asymmetry that matters: **the gate locks the fields, never the dial.** `.leftSettings` is
-/// always accepted, from either state, so a locked settings screen can always be tuned away from.
+/// always accepted, from any state, so a locked or landing settings screen can always be tuned away
+/// from.
 struct SettingsGate {
     private let pin: any PINOracle
     private var current: FeedSettings?
@@ -173,7 +184,7 @@ struct SettingsGate {
         if let length = pin.configuredLength {
             self.screen = .locked(PINChallenge(expectedLength: length))
         } else {
-            self.screen = .editing(SettingsDraft(
+            self.screen = .landing(SettingsDraft(
                 from: current,
                 delay: delay,
                 effects: effects,
@@ -187,7 +198,8 @@ struct SettingsGate {
         /// The dial landed on the settings slot. Idempotent: re-entering while already entered
         /// changes nothing, so a duplicate remote event cannot reset a draft.
         case enteredSettings
-        /// The dial turned away. Commits, then re-locks if a PIN is configured.
+        /// The dial turned away. Commits, then re-locks if a PIN is configured, or returns to
+        /// `.landing` if not.
         case leftSettings
         case typed(Digit)
         case backspace
@@ -206,6 +218,13 @@ struct SettingsGate {
         case transitionEffectStepped
         /// The viewer finished editing a field.
         case commitRequested
+        /// The viewer pressed EDIT SETTINGS on `.landing`. Moves straight into `.editing` with the
+        /// draft `.landing` was already holding — nothing to construct, nothing to commit.
+        case enterEditing
+        /// The viewer pressed BACK at the root of the editing menu: leave `.editing` without moving
+        /// the dial at all. Distinct from `.leftSettings`, which fires only when the dial itself
+        /// moves off the settings slot; this is "step back within settings" instead.
+        case backRequested
     }
 
     /// Three wrong PINs in a row buys 30 seconds, six buys five minutes. Not in `RetryPolicy`,
@@ -230,19 +249,14 @@ struct SettingsGate {
             return []
 
         case let (.editing(draft), .leftSettings):
-            let effects = commit(draft)
-            if let length = pin.configuredLength {
-                screen = .locked(PINChallenge(expectedLength: length))
-            } else {
-                screen = .editing(SettingsDraft(
-                    from: current,
-                    delay: currentDelay,
-                    effects: currentEffects,
-                    noiseVolume: currentNoiseVolume,
-                    transitionEffect: currentTransitionEffect
-                ))
-            }
-            return effects
+            return commitAndClose(draft)
+
+        case let (.editing(draft), .backRequested):
+            return commitAndClose(draft)
+
+        case let (.landing(draft), .enterEditing):
+            screen = .editing(draft)
+            return []
 
         case (.locked(var challenge), let .typed(digit)):
             guard !challenge.isCoolingDown(at: now) else { return [] }
@@ -315,12 +329,36 @@ struct SettingsGate {
         case let (.editing(draft), .commitRequested):
             return commit(draft)
 
-        case (.editing, .typed), (.editing, .backspace),
+        case (.editing, .typed), (.editing, .backspace), (.editing, .enterEditing),
              (.locked, .draftChanged), (.locked, .pinEdited), (.locked, .commitRequested),
-             (.locked, .delayStepped), (.locked, .effectStepped),
-             (.locked, .noiseVolumeStepped), (.locked, .transitionEffectStepped):
+             (.locked, .delayStepped), (.locked, .effectStepped), (.locked, .backRequested),
+             (.locked, .noiseVolumeStepped), (.locked, .transitionEffectStepped), (.locked, .enterEditing),
+             (.landing, .leftSettings), (.landing, .typed), (.landing, .backspace),
+             (.landing, .draftChanged), (.landing, .pinEdited), (.landing, .commitRequested),
+             (.landing, .delayStepped), (.landing, .effectStepped), (.landing, .backRequested),
+             (.landing, .noiseVolumeStepped), (.landing, .transitionEffectStepped):
             return []
         }
+    }
+
+    /// Shared by `.leftSettings` and `.backRequested` on `.editing`: commit the draft, then reopen on
+    /// `.locked` if a PIN is configured or `.landing` if not. The two events differ only in whether
+    /// the dial also moved — `.leftSettings` follows the dial leaving the settings slot entirely,
+    /// `.backRequested` fires with the dial untouched — but land on the same next screen either way.
+    private mutating func commitAndClose(_ draft: SettingsDraft) -> [GateEffect] {
+        let effects = commit(draft)
+        if let length = pin.configuredLength {
+            screen = .locked(PINChallenge(expectedLength: length))
+        } else {
+            screen = .landing(SettingsDraft(
+                from: current,
+                delay: currentDelay,
+                effects: currentEffects,
+                noiseVolume: currentNoiseVolume,
+                transitionEffect: currentTransitionEffect
+            ))
+        }
+        return effects
     }
 
     private mutating func commit(_ draft: SettingsDraft) -> [GateEffect] {
