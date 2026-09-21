@@ -1,5 +1,5 @@
 #!/bin/sh
-# Fires after `git checkout` / `git switch`. See regenerate-if-project-yml-changed.sh.
+# Fires after `git checkout` / `git switch`. See regenerate-if-project-changed.sh.
 # Args: previous HEAD, new HEAD, and 1 if this was a branch checkout (0 for a bare file checkout).
 previous_head="$1"
 new_head="$2"
@@ -10,4 +10,4 @@ if [ "$is_branch_checkout" != "1" ]; then
 fi
 
 hook_dir="$(cd "$(dirname "$0")" && pwd)"
-"$hook_dir/regenerate-if-project-yml-changed.sh" "$previous_head" "$new_head"
+"$hook_dir/regenerate-if-project-changed.sh" "$previous_head" "$new_head"
