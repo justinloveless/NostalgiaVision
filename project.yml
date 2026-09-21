@@ -1,3 +1,7 @@
+# Run `git config core.hooksPath .githooks` once per clone (it's repo-wide once set, not
+# per-worktree). Xcode reads the generated .xcodeproj, not this file, so the .githooks/post-merge
+# and post-checkout hooks rerun `xcodegen generate` whenever a pull/checkout changes this file —
+# otherwise Xcode silently keeps building against a stale package/target reference (see ORT-301).
 name: NostalgiaVision
 options:
   bundleIdPrefix: com.nostalgiavision

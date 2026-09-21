@@ -96,6 +96,51 @@ clean `xcodebuild build` — package resolution logged `Fetching ... (cached)` /
 packages` with no errors, build succeeded, and the checked-in-by-Xcode `Package.resolved` now shows
 a fixed `revision` with no `branch` key. Full `NostalgiaVisionTests` run: 99/99 still passing.
 
+## Round 4 — verified directly on the user's `~/Code/NostalgiaVision` checkout
+User merged the round-3 `project.yml` fix to `main` and still hit the same Xcode failure. Verified
+by working directly in that checkout (a separate worktree of the same repo) rather than trusting
+the merge alone:
+- `main`'s `project.yml` did have the `revision` pin, but its committed-to-disk `.xcodeproj` (a
+  generated, gitignored file) still had the old `requirement = { branch = main; kind = branch; }`
+  baked in — merging `project.yml` doesn't regenerate that file. Ran `xcodegen generate` in that
+  checkout; the regenerated `project.pbxproj` now shows `kind = revision; revision =
+  75e590e770f7f01d088ced2546deed9817b660ae;`. **This is the actual fix the user needed**: after
+  merging any `project.yml` change, `xcodegen generate` has to be rerun in that checkout before
+  Xcode will see it, and there's no build-phase automation currently wired up to do that
+  automatically.
+- Separately, one clean-build attempt in that checkout failed with `Couldn't check out revision
+  ...: cannot create directory ... No such file or directory` for FFmpegKit (a transitive
+  KSPlayer dependency). Traced with `lsof` to the user's own Xcode being open on this same project
+  at the time, holding files in the same shared `DerivedData` open — my terminal build was racing
+  their live Xcode session over the same checkout directory. Not a defect: an immediate retry, and
+  a subsequent non-destructive `xcodebuild build` (no `clean`, to stop colliding with their
+  session), both succeeded cleanly.
+
+## Round 5 — automated the missing regenerate step
+User asked to wire up automatic `xcodegen generate` after pulling a `project.yml` change, so
+round 4's manual fix doesn't have to be repeated by hand. Added three files under `.githooks/`
+(new, tracked):
+- `regenerate-if-project-yml-changed.sh` — shared logic: `git diff --name-only "$1" "$2"`, and if
+  `project.yml` is in the list, `cd` to that worktree's own root and run `xcodegen generate` (warns
+  instead of failing if `xcodegen` isn't on `PATH`).
+- `post-merge` — calls it with `ORIG_HEAD HEAD`, covers `git merge` and `git pull`.
+- `post-checkout` — calls it with the hook's own `$1 $2`, only when `$3` (the branch-checkout flag)
+  is `1`, covers switching branches.
+
+Ran `git config core.hooksPath .githooks` in this worktree. That config lives in the shared
+`.git/config` at the common repo root (`~/Code/NostalgiaVision/.git`), not per-worktree, so it's
+already active for every worktree of this repo right now, including `~/Code/NostalgiaVision`
+itself — confirmed by grepping that file directly. Added a one-line pointer comment at the top of
+`project.yml` so `core.hooksPath` is discoverable for any future fresh clone (git hooks aren't
+cloned automatically; the tracked `.githooks/` directory plus this one-time config is the standard
+way to make them so).
+
+Verified the hook logic itself (not just that it parses) by running
+`regenerate-if-project-yml-changed.sh` directly against real commit pairs from this branch's
+history: the commit that changed `project.yml` (round 3) correctly triggered `xcodegen generate`;
+a commit pair that only touched Swift files (round 2) correctly no-opped. Rebuilt after adding the
+`project.yml` header comment: build still succeeds.
+
 ## Key decisions
 - Kept `signalNoise` a single user-facing knob throughout — both asks were about internal
   coupling/intensity/resolution, not about exposing new controls.

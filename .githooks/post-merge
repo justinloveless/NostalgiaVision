@@ -1,0 +1,4 @@
+#!/bin/sh
+# Fires after `git merge` / `git pull`. See regenerate-if-project-yml-changed.sh.
+hook_dir="$(cd "$(dirname "$0")" && pwd)"
+"$hook_dir/regenerate-if-project-yml-changed.sh" ORIG_HEAD HEAD
