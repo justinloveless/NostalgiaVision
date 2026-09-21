@@ -1,24 +1,43 @@
 import SwiftUI
 
+/// The setup channel's on-screen-display palette. Broadcast cyan rather than amber so the two
+/// warning colours keep the warm end of the spectrum to themselves: red still means "this
+/// value will not validate" and orange still means "the feed is in trouble".
+enum SetupPalette {
+    static let accent = Color(red: 0.62, green: 0.94, blue: 1.0)
+    /// The same hue at reading contrast against the near-white card tvOS floods a focused control
+    /// with. `accent` on that card is very nearly invisible.
+    static let focusedAccent = Color(red: 0.03, green: 0.28, blue: 0.40)
+    static let label = Color.white.opacity(0.62)
+    static let dim = Color.white.opacity(0.28)
+}
+
 /// The one slot in the cycle that is not a channel.
 ///
-/// Everything interactive lives in a single horizontal row. That is the load-bearing layout
-/// decision of the whole app: no control here consumes vertical movement, so up/down always reach
-/// the shell's dial handler and the viewer can tune away — including away from a *locked* screen.
-/// A vertical `Form` would eat the only gesture that leaves this screen.
+/// Two layouts, because the dial is held in one state and not the other (`TVSet.dialAcceptsInput`,
+/// derived from `SettingsScreen.dialAcceptsInput`). Locked, up/down still tunes, so nothing on that
+/// screen may consume vertical movement: the keypad stays a single horizontal strip and a viewer
+/// who does not have the PIN can always turn away. That constraint is load-bearing and permanent.
+/// Unlocked, the dial is held, so vertical belongs to the menu instead and the way back to a
+/// channel has to be on screen: the EXIT TO TV row. Drop that row and the viewer is stranded on
+/// everything but tvOS's Menu button.
 struct SettingsScreenView: View {
     let screen: SettingsScreen
     let trouble: FeedTrouble?
     let send: (SettingsGate.Event) -> Void
+    let onExit: () -> Void
 
     @State private var editingField: EditableField?
-    @State private var pinEntry: [Digit]?
-    /// Nested CRT-effects row. Same idea as the PIN entry sub-row: one horizontal strip, no
-    /// vertical focus traps, BACK returns to the main settings fields.
-    @State private var editingEffects = false
-    /// Nested no-picture row. The main row is already as wide as the screen takes, so the hiss
-    /// volume lives behind the transition field instead of beside it.
-    @State private var editingTransition = false
+    @State private var panel: Panel = .root
+
+    /// Which face of the unlocked menu is showing. One value rather than a flag per sub-menu, so
+    /// "in the PIN pad *and* in the effects list" is not a state the view can get into.
+    private enum Panel: Equatable {
+        case root
+        case pinEntry([Digit])
+        case effects
+        case transition
+    }
 
     enum EditableField: String, Identifiable {
         case feedURL = "Feed URL"
@@ -28,33 +47,35 @@ struct SettingsScreenView: View {
     }
 
     var body: some View {
-        VStack(spacing: 72) {
-            Text(heading)
-                .font(.system(size: 44, weight: .heavy, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.5))
-                .tracking(12)
+        PictureEffectsStage(effects: .setupChannel) {
+            VStack(spacing: 24) {
+                Text(heading)
+                    .font(.system(size: 38, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(SetupPalette.accent.opacity(0.75))
+                    .tracking(10)
 
-            row
+                menu
 
-            Text(troubleCaption)
-                .font(.system(size: 24, weight: .regular, design: .monospaced))
-                .foregroundStyle(trouble == nil ? .white.opacity(0.3) : .orange)
-                .frame(height: 30)
+                Text(troubleCaption)
+                    .font(.system(size: 22, weight: .regular, design: .monospaced))
+                    .foregroundStyle(trouble == nil ? SetupPalette.dim : Color.orange)
+                    .frame(height: 30)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(cabinetInsets(bevel: PictureEffects.setupChannel.bevel))
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .background(SetupBackdrop())
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
         .fullScreenCover(item: $editingField) { field in
             TextFieldEditorCover(title: field.rawValue, initial: initialText(for: field)) { text in
                 commit(text, to: field)
             }
         }
         .onChange(of: isEditing) { _, editing in
-            // Leaving the unlocked draft (re-lock, or dial away) must collapse the sub-rows so a
+            // Leaving the unlocked draft (re-lock, or dial away) must collapse any sub-panel so a
             // later unlock does not open straight into one of them.
-            if !editing {
-                editingEffects = false
-                editingTransition = false
-            }
+            if !editing { panel = .root }
         }
     }
 
@@ -64,13 +85,15 @@ struct SettingsScreenView: View {
     }
 
     private var heading: String {
-        if editingEffects { return "PICTURE FX" }
-        if editingTransition { return "TRANSITION" }
-        return "SET-UP"
+        switch panel {
+        case .root, .pinEntry: return "SET-UP"
+        case .effects: return "PICTURE FX"
+        case .transition: return "TRANSITION"
+        }
     }
 
     @ViewBuilder
-    private var row: some View {
+    private var menu: some View {
         switch screen {
         case let .locked(challenge):
             // There is no draft to render here. Not "disabled" — absent.
@@ -84,113 +107,148 @@ struct SettingsScreenView: View {
             )
 
         case let .editing(draft):
-            if let entry = pinEntry {
-                PINKeypadRow(
-                    caption: "NEW PIN — \(PIN.allowedLength.lowerBound) TO \(PIN.allowedLength.upperBound) DIGITS",
-                    filled: entry.count,
-                    expectedLength: nil,
-                    shake: false,
-                    onDigit: { digit in
-                        guard entry.count < PIN.allowedLength.upperBound else { return }
-                        pinEntry = entry + [digit]
-                    },
-                    onBackspace: { pinEntry = entry.isEmpty ? entry : Array(entry.dropLast()) },
-                    controls: [
-                        PINKeypadRow.Control(title: "SAVE", isEnabled: PIN(digits: entry) != nil) {
-                            send(.pinEdited(.set(entry)))
-                            pinEntry = nil
-                        },
-                        PINKeypadRow.Control(title: "BACK", isEnabled: true) { pinEntry = nil }
-                    ]
-                )
-            } else if editingEffects {
-                HStack(spacing: 36) {
-                    ForEach(PictureEffectKind.allCases, id: \.self) { kind in
-                        field(title: kind.title, value: draft.pictureEffects[kind].caption, isValid: true) {
-                            send(.effectStepped(kind))
-                        }
-                    }
+            // Capped rather than full-bleed: across 1920pt a row's title and its value end up at
+            // opposite edges of the screen with nothing between them to read across. The locked
+            // keypad above is deliberately left uncapped — it is one strip of eleven controls and
+            // squeezing it wraps the labels.
+            editingMenu(draft)
+                .frame(maxWidth: 1100)
+        }
+    }
 
-                    field(title: "BACK", value: "SET-UP", isValid: true) {
-                        editingEffects = false
+    @ViewBuilder
+    private func editingMenu(_ draft: SettingsDraft) -> some View {
+        switch panel {
+        case .root:
+            VStack(spacing: 6) {
+                row(
+                    title: "FEED URL",
+                    value: draft.feedURLText.isEmpty ? "NOT SET" : draft.feedURLText,
+                    isValid: draft.validated != nil || draft.feedURLText.isEmpty
+                ) { editingField = .feedURL }
+
+                row(
+                    title: "NAME",
+                    value: draft.feedName.isEmpty ? "NOT SET" : draft.feedName,
+                    isValid: true
+                ) { editingField = .name }
+
+                row(title: "PIN", value: pinCaption(draft.pinEdit), isValid: true) {
+                    panel = .pinEntry([])
+                }
+
+                row(title: "CLEAR PIN", value: "NO LOCK", isValid: true) {
+                    send(.pinEdited(.cleared))
+                }
+
+                // Steps the detent ladder and persists on the spot, like CLEAR PIN — there is
+                // nothing to type, so no editor cover and no commit.
+                row(title: "TUNE DELAY", value: draft.tuneDelay.caption, isValid: true) {
+                    send(.delayStepped)
+                }
+
+                row(
+                    title: "PICTURE FX",
+                    value: draft.pictureEffects.isActive ? "ON" : "OFF",
+                    isValid: true
+                ) { panel = .effects }
+
+                row(title: "TRANSITION", value: draft.transitionEffect.title, isValid: true) {
+                    panel = .transition
+                }
+
+                Rectangle()
+                    .fill(SetupPalette.dim)
+                    .frame(height: 1)
+                    .padding(.top, 18)
+                    .padding(.horizontal, 28)
+
+                row(title: "EXIT TO TV", value: "CHANNEL", isValid: true) { onExit() }
+            }
+
+        case let .pinEntry(entry):
+            PINEntryPad(
+                entry: entry,
+                onDigit: { digit in
+                    guard entry.count < PIN.allowedLength.upperBound else { return }
+                    panel = .pinEntry(entry + [digit])
+                },
+                onBackspace: { panel = .pinEntry(Array(entry.dropLast())) },
+                onSave: {
+                    send(.pinEdited(.set(entry)))
+                    panel = .root
+                },
+                onBack: { panel = .root }
+            )
+
+        case .effects:
+            VStack(spacing: 6) {
+                ForEach(PictureEffectKind.allCases, id: \.self) { kind in
+                    row(title: kind.title, value: draft.pictureEffects[kind].caption, isValid: true) {
+                        send(.effectStepped(kind))
                     }
                 }
-            } else if editingTransition {
-                HStack(spacing: 36) {
-                    field(title: "NOISE VOL", value: draft.noiseVolume.caption, isValid: true) {
-                        send(.noiseVolumeStepped)
-                    }
 
-                    field(title: "TRANSITION", value: draft.transitionEffect.title, isValid: true) {
-                        send(.transitionEffectStepped)
-                    }
+                row(title: "BACK", value: "SET-UP", isValid: true) { panel = .root }
+            }
 
-                    field(title: "BACK", value: "SET-UP", isValid: true) {
-                        editingTransition = false
-                    }
+        case .transition:
+            VStack(spacing: 6) {
+                row(title: "NOISE VOL", value: draft.noiseVolume.caption, isValid: true) {
+                    send(.noiseVolumeStepped)
                 }
-            } else {
-                HStack(spacing: 60) {
-                    field(
-                        title: "FEED URL",
-                        value: draft.feedURLText.isEmpty ? "NOT SET" : draft.feedURLText,
-                        isValid: draft.validated != nil || draft.feedURLText.isEmpty
-                    ) { editingField = .feedURL }
 
-                    field(
-                        title: "NAME",
-                        value: draft.feedName.isEmpty ? "NOT SET" : draft.feedName,
-                        isValid: true
-                    ) { editingField = .name }
-
-                    field(title: "PIN", value: pinCaption(draft.pinEdit), isValid: true) {
-                        pinEntry = []
-                    }
-
-                    field(title: "CLEAR PIN", value: "NO LOCK", isValid: true) {
-                        send(.pinEdited(.cleared))
-                    }
-
-                    // Steps the detent ladder and persists on the spot, like CLEAR PIN — there is
-                    // nothing to type, so no editor cover and no commit.
-                    field(title: "TUNE DELAY", value: draft.tuneDelay.caption, isValid: true) {
-                        send(.delayStepped)
-                    }
-
-                    field(
-                        title: "PICTURE FX",
-                        value: draft.pictureEffects.isActive ? "ON" : "OFF",
-                        isValid: true
-                    ) {
-                        editingEffects = true
-                    }
-
-                    field(
-                        title: "TRANSITION",
-                        value: draft.transitionEffect.title,
-                        isValid: true
-                    ) {
-                        editingTransition = true
-                    }
+                row(title: "TRANSITION", value: draft.transitionEffect.title, isValid: true) {
+                    send(.transitionEffectStepped)
                 }
+
+                row(title: "BACK", value: "SET-UP", isValid: true) { panel = .root }
             }
         }
     }
 
-    private func field(title: String, value: String, isValid: Bool, action: @escaping () -> Void) -> some View {
+    private func row(title: String, value: String, isValid: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 12) {
+            RowLabel(title: title, value: value, isValid: isValid)
+        }
+    }
+
+    /// Title before value, always: XCUITest matches these buttons on the composed accessibility
+    /// label ("FEED URL, …"), which is built from the subviews in tree order.
+    ///
+    /// A view of its own only so it can read `isFocused`. tvOS floods the focused control with a
+    /// near-white card and inverts the text itself only for plain-title buttons; a custom label
+    /// like this one keeps whatever colours it was handed, which would wash out the single row the
+    /// viewer is actually reading.
+    private struct RowLabel: View {
+        let title: String
+        let value: String
+        let isValid: Bool
+
+        @Environment(\.isFocused) private var isFocused
+
+        var body: some View {
+            HStack(spacing: 32) {
                 Text(title)
-                    .font(.system(size: 22, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .font(.system(size: 26, weight: .bold, design: .monospaced))
+                    .foregroundStyle(isFocused ? Color.black.opacity(0.85) : .white)
+
+                Spacer()
+
                 Text(value)
-                    .font(.system(size: 28, weight: .regular, design: .monospaced))
-                    .foregroundStyle(isValid ? .white : .red)
+                    .font(.system(size: 26, weight: .regular, design: .monospaced))
+                    .foregroundStyle(valueColor)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .frame(maxWidth: 520)
             }
-            .padding(24)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 28)
+            .frame(maxWidth: .infinity)
+        }
+
+        private var valueColor: Color {
+            guard isValid else { return .red }
+            return isFocused ? SetupPalette.focusedAccent : SetupPalette.accent
         }
     }
 

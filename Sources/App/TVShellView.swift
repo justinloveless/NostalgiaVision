@@ -31,8 +31,14 @@ struct TVShellView: View {
                     .focused($shellHasFocus)
 
             case let .settings(screen, trouble):
-                // Horizontally navigable by construction; leaves up/down to the dial.
-                SettingsScreenView(screen: screen, trouble: trouble) { event in tv.settings(event) }
+                // Locked, it is one horizontal strip that leaves up/down to the dial. Unlocked, the
+                // dial is held and the menu owns up/down, so it needs its own way out.
+                SettingsScreenView(
+                    screen: screen,
+                    trouble: trouble,
+                    send: { event in tv.settings(event) },
+                    onExit: { tv.leaveSettings() }
+                )
             }
         }
         // A sibling of the screen, not part of it: the bar names where the knob is pointing, which
