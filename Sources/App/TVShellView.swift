@@ -23,7 +23,9 @@ struct TVShellView: View {
                     tuned: tuned,
                     reception: reception,
                     feedName: tv.feedName,
-                    effects: tv.pictureEffects
+                    effects: tv.pictureEffects,
+                    transitionEffect: tv.transitionEffect,
+                    noiseVolume: tv.noiseVolume
                 )
                     .focusable(true)
                     .focused($shellHasFocus)

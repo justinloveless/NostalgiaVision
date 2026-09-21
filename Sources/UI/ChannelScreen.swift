@@ -9,6 +9,8 @@ struct ChannelScreen: View {
     let reception: Reception
     let feedName: String
     let effects: PictureEffects
+    let transitionEffect: TransitionEffect
+    let noiseVolume: EffectAmount
 
     @State private var showsChannelBug = true
 
@@ -20,9 +22,7 @@ struct ChannelScreen: View {
                 PlayerSurface(playerLayer: playerLayer)
                     .ignoresSafeArea()
 
-                if reception != .picture {
-                    SnowView()
-                }
+                transitionOverlay
 
                 if case let .noSignal(signal) = reception {
                     caption(for: signal)
@@ -39,6 +39,27 @@ struct ChannelScreen: View {
             showsChannelBug = true
             try? await Task.sleep(for: .seconds(3))
             showsChannelBug = false
+        }
+    }
+
+    /// A `NoSignal` is a real dropped signal, not a transition the viewer asked for, so it shows
+    /// static whatever the setting says. The rule lives here alone so no branch below has to ask
+    /// what the reception is.
+    private var effectiveTransition: TransitionEffect {
+        reception == .acquiring ? transitionEffect : .staticSnow
+    }
+
+    @ViewBuilder
+    private var transitionOverlay: some View {
+        if reception != .picture {
+            // No `default:`: a fifth look must fail to compile here rather than quietly render
+            // nothing over the black.
+            switch effectiveTransition {
+            case .staticSnow: SnowView(noiseVolume: noiseVolume)
+            case .blackSpinner: BlackSpinnerView()
+            case .colorBars: ColorBarsView()
+            case .blank: EmptyView()
+            }
         }
     }
 

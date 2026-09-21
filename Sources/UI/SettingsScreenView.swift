@@ -16,6 +16,9 @@ struct SettingsScreenView: View {
     /// Nested CRT-effects row. Same idea as the PIN entry sub-row: one horizontal strip, no
     /// vertical focus traps, BACK returns to the main settings fields.
     @State private var editingEffects = false
+    /// Nested no-picture row. The main row is already as wide as the screen takes, so the hiss
+    /// volume lives behind the transition field instead of beside it.
+    @State private var editingTransition = false
 
     enum EditableField: String, Identifiable {
         case feedURL = "Feed URL"
@@ -26,7 +29,7 @@ struct SettingsScreenView: View {
 
     var body: some View {
         VStack(spacing: 72) {
-            Text(editingEffects ? "PICTURE FX" : "SET-UP")
+            Text(heading)
                 .font(.system(size: 44, weight: .heavy, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.5))
                 .tracking(12)
@@ -46,15 +49,24 @@ struct SettingsScreenView: View {
             }
         }
         .onChange(of: isEditing) { _, editing in
-            // Leaving the unlocked draft (re-lock, or dial away) must collapse the FX sub-row so a
-            // later unlock does not open straight into effects.
-            if !editing { editingEffects = false }
+            // Leaving the unlocked draft (re-lock, or dial away) must collapse the sub-rows so a
+            // later unlock does not open straight into one of them.
+            if !editing {
+                editingEffects = false
+                editingTransition = false
+            }
         }
     }
 
     private var isEditing: Bool {
         if case .editing = screen { return true }
         return false
+    }
+
+    private var heading: String {
+        if editingEffects { return "PICTURE FX" }
+        if editingTransition { return "TRANSITION" }
+        return "SET-UP"
     }
 
     @ViewBuilder
@@ -103,6 +115,20 @@ struct SettingsScreenView: View {
                         editingEffects = false
                     }
                 }
+            } else if editingTransition {
+                HStack(spacing: 36) {
+                    field(title: "NOISE VOL", value: draft.noiseVolume.caption, isValid: true) {
+                        send(.noiseVolumeStepped)
+                    }
+
+                    field(title: "TRANSITION", value: draft.transitionEffect.title, isValid: true) {
+                        send(.transitionEffectStepped)
+                    }
+
+                    field(title: "BACK", value: "SET-UP", isValid: true) {
+                        editingTransition = false
+                    }
+                }
             } else {
                 HStack(spacing: 60) {
                     field(
@@ -137,6 +163,14 @@ struct SettingsScreenView: View {
                         isValid: true
                     ) {
                         editingEffects = true
+                    }
+
+                    field(
+                        title: "TRANSITION",
+                        value: draft.transitionEffect.title,
+                        isValid: true
+                    ) {
+                        editingTransition = true
                     }
                 }
             }

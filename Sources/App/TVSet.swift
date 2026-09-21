@@ -54,6 +54,8 @@ final class TVSet {
             current: persisted.settings,
             delay: persisted.tuneDelay,
             effects: persisted.pictureEffects,
+            noiseVolume: persisted.noiseVolume,
+            transitionEffect: persisted.transitionEffect,
             now: .now
         )
         self.trouble = persisted.settings == nil ? .notConfigured : nil
@@ -82,6 +84,13 @@ final class TVSet {
     /// CRT post-processing knobs applied over the picture. Read through from the store so a
     /// settings click updates the live channel the moment the viewer tunes back.
     var pictureEffects: PictureEffects { store.persisted.pictureEffects }
+
+    /// How loud the tuning-in noise bed plays. Read through from the store, like `pictureEffects`.
+    var noiseVolume: EffectAmount { store.persisted.noiseVolume }
+
+    /// What the screen shows while a channel tunes in. Read through from the store, like
+    /// `pictureEffects`.
+    var transitionEffect: TransitionEffect { store.persisted.transitionEffect }
 
     /// Idempotent. Restores persisted settings and refreshes the lineup. Safe to call again on
     /// scene re-activation: a second call performs no fetch and no re-tune.
@@ -125,6 +134,14 @@ final class TVSet {
             case let .persistEffects(effects):
                 var persisted = store.persisted
                 persisted.pictureEffects = effects
+                store.persisted = persisted
+            case let .persistNoiseVolume(volume):
+                var persisted = store.persisted
+                persisted.noiseVolume = volume
+                store.persisted = persisted
+            case let .persistTransitionEffect(transition):
+                var persisted = store.persisted
+                persisted.transitionEffect = transition
                 store.persisted = persisted
             case let .refetchFeed(url):
                 startRefresh(from: url)
