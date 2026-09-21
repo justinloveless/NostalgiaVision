@@ -1,61 +1,71 @@
-# ORT-300: Bevel — an old-TV cabinet frame around the picture
+# ORT-301: Noise effect jitter is too aggressive
 
 ## Task
-Add a seventh CRT picture-FX knob, "bevel": an opaque old-TV cabinet painted over the outer band
-of the screen, with a transparent cutout in the middle so the actual picture reads as something
-being watched *through* an old television rather than a rectangle with filters on it.
+The "NOISE" CRT picture-FX knob (`signalNoise`) makes the whole video jump around drastically.
+Separate the visual grain from the positional jitter it also drives, and tone the jitter down
+significantly.
 
 ## State: done, ready for review
 
+## Root cause
+`PictureEffectsStage.jitterOffset` had two independent problems, both in
+`Sources/UI/PictureEffectsStage.swift`:
+- **Modulo bias.** `Int64(bitPattern: s) % 1001` is a *signed* remainder. For roughly half the
+  random 64-bit seeds, `Int64(bitPattern: s)` is negative, and Swift's `%` returns a negative
+  result for a negative dividend. So each axis actually landed in `[-1.5, 0.5]`, not the intended
+  `[-0.5, 0.5]` — twice the intended spread, and biased about -0.5 on average instead of centered
+  on zero. Confirmed by simulating 200k draws of the exact formula: measured range `[-1.5, 0.5]`,
+  mean `-0.50`.
+- **Same seed and cadence as the grain overlay.** The jitter offset and `SignalNoiseOverlay`'s
+  grain were driven by the same per-frame seed from a `TimelineView` redrawing at 24fps, so the
+  whole picture's position re-rolled 24 times a second at up to ±4pt per axis (further inflated by
+  the bias above). That reads as constant high-frequency shaking, not a loose antenna.
+
+Verified by replaying the exact production formula (before/after) over 5 simulated seconds at full
+strength in a throwaway Swift script (`swift /tmp/jitter-repro/verify.swift`, not part of the
+repo): before, mean magnitude 7.98pt with a constant ~(-3.9, -4.4)pt bias, changing almost every
+frame (119/120 transitions); after, mean magnitude 0.72pt centered near (0.04, -0.01), changing
+only 29/120 frames.
+
 ## What changed
-- `Sources/Domain/PictureEffects.swift` — new `PictureEffectKind.bevel` case (title `"BEVEL"`), new
-  `PictureEffects.bevel` field, wired into `.off` and the by-kind subscript. Steps OFF → 25% → 50%
-  → 75% → 100% exactly like the other six knobs; the settings screen's `ForEach(allCases)` row
-  picked it up with no UI changes needed.
-- `Sources/Storage/SettingsStore.swift` — new `nostalgiavision.fx.bevel` UserDefaults key, read and
-  written the same way as the other five FX keys.
-- `Sources/UI/PictureEffectsStage.swift` — new `BevelOverlay`, rendered topmost (after
-  `CurvatureMaskOverlay`) since the cabinet is the outermost physical object. It fills the full
-  canvas minus a cushion-shaped cutout (`eoFill`) with a wood-cabinet gradient, darkens the cutout's
-  inner lip, and fades in a speaker grille + two control knobs (sized off the frame's own apron, not
-  absolute points) as the knob strength increases. `CurvatureMaskOverlay`'s cushion-path math was
-  extracted into a shared `cushionPath(in:corner:bow:)` function (pure refactor, verified
-  byte-identical renders before/after) so the bevel's cutout can reuse curvature's exact tube shape
-  — passing `effects.curvature.amount` as `curvatureAmount` — so a bevel+curvature combo never shows
-  a straight cabinet edge crossing a bowed tube edge.
-- Tests updated for the new 7th kind (`PictureEffectsTests.swift`,
-  `SettingsStorePictureEffectsTests.swift`), plus one dedicated round-trip test each for the domain
-  stepping and the storage persistence.
-- Fixed, in the same file we already had to touch: `SettingsStorePictureEffectsTests.swift` called
-  the non-existent `UserDefaults.suiteName` instance property, which meant the whole test target
-  failed to build (this was flagged, pre-existing, and left alone in ORT-299). Hoisted the suite
-  name into a local `let` instead. This is the one-line reason `NostalgiaVisionTests` now actually
-  runs.
+`Sources/UI/PictureEffectsStage.swift` only:
+- `jitterOffset` now derives `x`/`y` via unsigned bit-shifting (`(s >> 33) & 0xFFFF`), matching the
+  RNG pattern already used by `SignalNoiseOverlay` elsewhere in the file, instead of the biased
+  signed modulo.
+- Jitter's pixel range dropped from `2.0 + 6.0 * amount.value` (max ±4pt/axis) to
+  `0.5 + 1.5 * amount.value` (max ±1pt/axis).
+- The jitter offset and the grain overlay now derive from **separate seeds**: `noiseSeed` still
+  updates every frame (~24fps) for lively static; `jitterSeed` is quantized to a new
+  `jitterUpdatesPerSecond = 6.0` constant, so the picture's position holds for ~166ms before
+  re-rolling instead of every ~42ms. This is the literal "separate the visual noise from the
+  jitter" ask — they're independently tunable now, not just visually distinct overlays sharing one
+  clock.
+
+No new `PictureEffectKind` or settings-UI change — the ask was to decouple and tone down an
+existing knob's two internal behaviors, not to expose a second control. `SignalNoiseOverlay` (the
+grain itself) is untouched.
 
 ## Key decisions
-- **No image assets.** The project has no `.xcassets` and every existing FX overlay (vignette,
-  scanlines, curvature, chroma, glow, noise) is pure SwiftUI `Canvas`/shape drawing. The bevel is
-  the same: a procedural cabinet, not a bitmap. This keeps the effect resolution-independent and
-  avoids introducing an asset pipeline for one decorative overlay.
-- **Cabinet opening is drawn from curvature's own geometry**, not a plain rounded rect, so the two
-  knobs compose cleanly together at any combination of strengths.
-- **Bevel and curvature can hide each other's edge treatment at full strength on both** — at 100%
-  bevel the cabinet's opening sits inside curvature's own rim-shadow band, so you see only the
-  inner part of curvature's blurred rim. Treated this as correct (a real cabinet's opening is
-  narrower than the tube), not a bug.
+- Kept `signalNoise` a single user-facing knob. The request was about internal coupling and
+  intensity, not about giving the user two dials.
+- No new unit test for `jitterOffset` — it's a `private` view-internal function with no existing
+  test precedent in this codebase (view-level pure functions here are verified by headless
+  rendering/simulation instead, matching ORT-300's approach), so a throwaway numeric repro script
+  was the appropriate verification tool rather than a permanent test.
 
 ## Verification
-- `xcodegen generate` + `xcodebuild build` for the tvOS simulator: **build succeeded** (confirmed
-  independently, not just via the implementing subagent's report).
-- `xcodebuild test -only-testing:NostalgiaVisionTests`: **99 tests, 0 failures** (confirmed
-  independently) — first real run of this target; it failed to compile before the `suiteName` fix.
-- Visual check: rendered the actual production `BevelOverlay`/`PictureEffectsStage` headlessly via
-  `ImageRenderer` on macOS (scratch harness in `/tmp/bevel-preview`, not part of the repo) against a
-  color-bars test pattern, at bevel 25%/100% alone and bevel 100% combined with curvature 50%/100%.
-  Inspected the PNGs directly: a real wood-cabinet frame with a genuinely transparent cutout showing
-  the picture, a speaker grille and two knobs that scale with strength, and a cutout that bows in
-  lockstep with the curvature tube when both are on.
+- `xcodegen generate` + `xcodebuild build` for the tvOS simulator: **build succeeded**.
+- `xcodebuild test -only-testing:NostalgiaVisionTests`: **99 tests, 0 failures**, both before and
+  after the fix.
+- Numeric before/after repro of the exact seed/amplitude/cadence formula (see Root cause) showing
+  the bias is gone and both magnitude and update frequency are down roughly 10x at full strength.
+
+## Dependencies
+- Blocked by ORT-300 (bevel) — done, unaffected by this change (bevel sits later in the `ZStack`
+  and doesn't touch jitter or noise).
+- Blocks ORT-302 ("White noise whenever snow plays") — that task's "snow" static is a *separate*
+  implementation (`Sources/UI/SnowView.swift`, the no-signal channel screen), not this
+  `signalNoise` picture effect, so this change makes no assumptions on ORT-302's behalf.
 
 ## Open items
-- None for this task. ORT-301 (Noise effect) is unaffected — `signalNoise` already existed as a
-  knob and sits earlier in the `ZStack`, untouched by this change.
+- None for this task.

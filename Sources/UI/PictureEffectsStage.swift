@@ -1,5 +1,9 @@
 import SwiftUI
 
+/// How often the positional jitter re-rolls, independent of the grain overlay's own redraw rate —
+/// the picture should read as being on an unstable antenna, not as vibrating.
+private let jitterUpdatesPerSecond = 6.0
+
 /// Composites the seven CRT post-processing knobs over the picture.
 ///
 /// Implemented as overlays and a light positional jitter rather than a GPU capture of the player:
@@ -12,16 +16,19 @@ struct PictureEffectsStage<Content: View>: View {
     var body: some View {
         if effects.signalNoise.isEnabled {
             TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { timeline in
-                let seed = UInt64(bitPattern: Int64(timeline.date.timeIntervalSinceReferenceDate * 1000))
-                stage(seed: seed)
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                let noiseSeed = UInt64(bitPattern: Int64(time * 1000))
+                let jitterTime = (time * jitterUpdatesPerSecond).rounded(.down) / jitterUpdatesPerSecond
+                let jitterSeed = UInt64(bitPattern: Int64(jitterTime * 1000))
+                stage(noiseSeed: noiseSeed, jitterSeed: jitterSeed)
             }
         } else {
-            stage(seed: 0)
+            stage(noiseSeed: 0, jitterSeed: 0)
         }
     }
 
-    private func stage(seed: UInt64) -> some View {
-        let jitter = Self.jitterOffset(amount: effects.signalNoise.amount, seed: seed)
+    private func stage(noiseSeed: UInt64, jitterSeed: UInt64) -> some View {
+        let jitter = Self.jitterOffset(amount: effects.signalNoise.amount, seed: jitterSeed)
 
         return ZStack {
             content()
@@ -37,7 +44,7 @@ struct PictureEffectsStage<Content: View>: View {
             }
 
             if effects.signalNoise.isEnabled {
-                SignalNoiseOverlay(amount: effects.signalNoise.amount, seed: seed)
+                SignalNoiseOverlay(amount: effects.signalNoise.amount, seed: noiseSeed)
             }
 
             if effects.glowBloom.isEnabled {
@@ -58,15 +65,20 @@ struct PictureEffectsStage<Content: View>: View {
         }
     }
 
-    /// A few pixels of unstable framing — the aerial is slightly bent.
+    /// A whisper of unstable framing — the aerial is slightly bent. Kept subtle: this used to
+    /// swing up to ±4pt on both axes every single frame, which read as the whole picture
+    /// vibrating rather than a loose antenna.
     private static func jitterOffset(amount: EffectAmount, seed: UInt64) -> CGSize {
         guard amount.isEnabled else { return .zero }
         var s = seed | 1
+        // `>>` on a UInt64 is a logical shift, so this lands evenly in [0, 1) unlike the signed
+        // `% 1001` this replaced, which folded negative seeds into [-1.5, -0.5) and skewed every
+        // axis toward one corner instead of centering on zero.
         s = s &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-        let x = Double(Int64(bitPattern: s) % 1001) / 1000.0 - 0.5
+        let x = Double((s >> 33) & 0xFFFF) / 65535.0 - 0.5
         s = s &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-        let y = Double(Int64(bitPattern: s) % 1001) / 1000.0 - 0.5
-        let pixels = 2.0 + 6.0 * amount.value
+        let y = Double((s >> 33) & 0xFFFF) / 65535.0 - 0.5
+        let pixels = 0.5 + 1.5 * amount.value
         return CGSize(width: x * pixels, height: y * pixels)
     }
 }
