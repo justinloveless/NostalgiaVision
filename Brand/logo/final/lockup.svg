@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 380" role="img" aria-labelledby="title desc">
   <title id="title">Nostalgia Vision logo</title>
   <desc id="desc">Retro broadcast CRT mark with Nostalgia Vision wordmark</desc>
   <defs>
@@ -6,6 +6,7 @@
       .charcoal { fill: #1C1F26; }
       .cream { fill: #F5F0E6; }
       .amber { fill: #C4783A; stroke: #C4783A; }
+      .recess { fill: #14161C; }
       .wordmark {
         fill: #1C1F26;
         font-family: "Avenir Next", "Nunito", "Segoe UI", "Helvetica Neue", sans-serif;
@@ -17,26 +18,33 @@
   </defs>
 
   <!-- Mark (centered) -->
-  <g transform="translate(120 18)">
+  <g transform="translate(120 8)">
     <g class="amber" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="120" cy="42" r="5" fill="#C4783A"/>
-      <line x1="120" y1="42" x2="78" y2="14" stroke-width="5"/>
-      <line x1="120" y1="42" x2="162" y2="14" stroke-width="5"/>
+      <circle cx="120" cy="38" r="6" fill="#C4783A"/>
+      <line x1="120" y1="38" x2="72" y2="10" stroke-width="5.5"/>
+      <line x1="120" y1="38" x2="168" y2="10" stroke-width="5.5"/>
     </g>
-    <rect class="charcoal" x="48" y="48" width="144" height="144" rx="28" ry="28"/>
-    <rect class="cream" x="64" y="64" width="96" height="96" rx="14" ry="14"/>
-    <g stroke="#C4783A" stroke-width="4" stroke-linecap="round">
-      <line x1="76" y1="80" x2="148" y2="80"/>
-      <line x1="76" y1="94" x2="148" y2="94"/>
-      <line x1="76" y1="108" x2="148" y2="108"/>
-      <line x1="76" y1="122" x2="148" y2="122"/>
-      <line x1="76" y1="136" x2="148" y2="136"/>
-      <line x1="76" y1="150" x2="148" y2="150"/>
+    <rect class="charcoal" x="42" y="44" width="156" height="168" rx="36" ry="36"/>
+    <rect class="cream" x="58" y="60" width="108" height="108" rx="18" ry="18"/>
+    <g stroke="#C4783A" stroke-width="4" stroke-linecap="round" opacity="0.95">
+      <line x1="72" y1="76" x2="152" y2="76"/>
+      <line x1="72" y1="88" x2="152" y2="88"/>
+      <line x1="72" y1="100" x2="152" y2="100"/>
+      <line x1="72" y1="112" x2="152" y2="112"/>
+      <line x1="72" y1="124" x2="152" y2="124"/>
+      <line x1="72" y1="136" x2="152" y2="136"/>
+      <line x1="72" y1="148" x2="152" y2="148"/>
+      <line x1="72" y1="160" x2="152" y2="160"/>
     </g>
-    <circle cx="178" cy="88" r="8" fill="#C4783A"/>
-    <circle cx="178" cy="116" r="6" fill="#C4783A"/>
+    <circle cx="185" cy="88" r="10" fill="#C4783A"/>
+    <circle cx="185" cy="118" r="7" fill="#C4783A"/>
+    <ellipse class="recess" cx="120" cy="188" rx="28" ry="12"/>
+    <circle cx="108" cy="186" r="3.2" fill="#C4783A"/>
+    <circle cx="120" cy="186" r="3.2" fill="#C4783A"/>
+    <circle cx="132" cy="186" r="3.2" fill="#C4783A"/>
+    <path d="M114 194 L120 199 L126 194" fill="none" stroke="#C4783A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 
   <!-- Wordmark -->
-  <text class="wordmark" x="240" y="300" text-anchor="middle">Nostalgia Vision</text>
+  <text class="wordmark" x="240" y="330" text-anchor="middle">Nostalgia Vision</text>
 </svg>

@@ -20,6 +20,8 @@ Concept PNGs live in [`concepts/`](concepts/).
 
 **Concept 1 — Retro broadcast mark** was selected.
 
+Confirmed against the stakeholder reference in [`reference/user-direction.jpg`](reference/user-direction.jpg).
+
 Reasons:
 
 - Matches the product’s CRT / analog broadcast identity more directly than lens, neon, film, or monogram directions
@@ -29,12 +31,12 @@ Reasons:
 
 ## Refinement (second pass)
 
-Focused on composition, typography, color, and scalability:
+Focused on composition, typography, color, and scalability, aligned to the reference:
 
-- **Composition** — Removed bottom control-panel clutter; kept antenna + two knobs as the only hardware accents so the screen and scan lines stay primary
+- **Composition** — Full CRT silhouette: rabbit-ear antenna, cream screen with eight amber scan lines, two right-side knobs (larger over smaller), and the bottom recessed control panel (three amber dots + chevron)
 - **Typography** — Rounded geometric sans wordmark in title case; charcoal on light, cream on dark
 - **Color** — Locked palette (see below)
-- **Scalability** — Delivered SVG mark + lockup, plus PNG lockups (light/dark) and mark-only
+- **Scalability** — Delivered SVG mark + lockup, plus PNG lockups (light/dark) and mark-only; size proofs at 64 / 128 / 512
 
 ## Color palette
 
@@ -42,7 +44,8 @@ Focused on composition, typography, color, and scalability:
 |-------|-----|-----|
 | Charcoal | `#1C1F26` | TV body, light-mode wordmark |
 | Cream | `#F5F0E6` | Screen fill, dark-mode wordmark |
-| Amber | `#C4783A` | Scan lines, antenna, knobs |
+| Amber | `#C4783A` | Scan lines, antenna, knobs, panel accents |
+| Recess | `#14161C` | Bottom control panel well |
 | Paper | `#FAF7F2` | Light background |
 | Night | `#0E1014` | Dark background |
 
@@ -57,10 +60,11 @@ Focused on composition, typography, color, and scalability:
 | [`final/mark-only.png`](final/mark-only.png) | Raster mark for previews / placeholders |
 | [`final/mark-64.png`](final/mark-64.png) / [`128`](final/mark-128.png) / [`512`](final/mark-512.png) | Size proofs from the SVG geometry |
 | [`final/scalability-sheet.png`](final/scalability-sheet.png) | Side-by-side size comparison |
+| [`reference/user-direction.jpg`](reference/user-direction.jpg) | Stakeholder reference used for refinement |
 
 ## Usage notes
 
 - Prefer the SVG mark for app icons, docs, and marketing; export PNG/PDF as needed
-- Keep amber accents sparse — scan lines + antenna + knobs only
+- Keep amber accents on antenna, scan lines, knobs, and the bottom panel only
 - Do not add neon glow, drop shadows, or extra badges on the mark
 - Wordmark may sit below the mark (centered) or to the right for horizontal layouts
