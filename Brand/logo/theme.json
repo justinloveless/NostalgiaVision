@@ -1,0 +1,74 @@
+{
+  "name": "Nostalgia Vision",
+  "themes": {
+    "standard": {
+      "description": "Default brand theme — charcoal body, amber accents, cream screen",
+      "tokens": {
+        "charcoal": { "hex": "#1C1F26", "use": "TV body, light-mode wordmark, primary text" },
+        "cream": { "hex": "#F5F0E6", "use": "Screen fill, dark-mode wordmark" },
+        "amber": { "hex": "#C4783A", "use": "Scan lines, antenna, knobs, accents, CTAs" },
+        "recess": { "hex": "#14161C", "use": "Inset control wells" },
+        "paper": { "hex": "#FAF7F2", "use": "Light app background" },
+        "night": { "hex": "#0E1014", "use": "Dark app background" }
+      },
+      "cssVariables": {
+        "--nv-charcoal": "#1C1F26",
+        "--nv-cream": "#F5F0E6",
+        "--nv-amber": "#C4783A",
+        "--nv-recess": "#14161C",
+        "--nv-paper": "#FAF7F2",
+        "--nv-night": "#0E1014",
+        "--nv-bg": "#FAF7F2",
+        "--nv-fg": "#1C1F26",
+        "--nv-accent": "#C4783A",
+        "--nv-surface": "#F5F0E6"
+      }
+    },
+    "swapped": {
+      "description": "Orange ↔ charcoal swap — amber TV body, charcoal accents",
+      "tokens": {
+        "amberBody": { "hex": "#C4783A", "use": "TV body" },
+        "charcoalAccent": { "hex": "#1C1F26", "use": "Antenna, knobs, scan lines, accents" },
+        "cream": { "hex": "#F5F0E6", "use": "Screen fill" },
+        "amberDeep": { "hex": "#A8622E", "use": "Control well / deeper amber" },
+        "paper": { "hex": "#FAF7F2", "use": "Light app background" },
+        "night": { "hex": "#0E1014", "use": "Dark app background" }
+      },
+      "cssVariables": {
+        "--nv-charcoal": "#1C1F26",
+        "--nv-cream": "#F5F0E6",
+        "--nv-amber": "#C4783A",
+        "--nv-amber-deep": "#A8622E",
+        "--nv-paper": "#FAF7F2",
+        "--nv-night": "#0E1014",
+        "--nv-bg": "#FAF7F2",
+        "--nv-fg": "#1C1F26",
+        "--nv-accent": "#1C1F26",
+        "--nv-surface": "#C4783A"
+      }
+    },
+    "dark": {
+      "description": "Dark UI theme using the standard brand colors",
+      "tokens": {
+        "night": { "hex": "#0E1014", "use": "App background" },
+        "charcoal": { "hex": "#1C1F26", "use": "Surfaces / cards" },
+        "cream": { "hex": "#F5F0E6", "use": "Primary text / wordmark" },
+        "amber": { "hex": "#C4783A", "use": "Accents / CTAs" },
+        "recess": { "hex": "#14161C", "use": "Inset controls" },
+        "paper": { "hex": "#FAF7F2", "use": "Light-mode alternate" }
+      },
+      "cssVariables": {
+        "--nv-charcoal": "#1C1F26",
+        "--nv-cream": "#F5F0E6",
+        "--nv-amber": "#C4783A",
+        "--nv-recess": "#14161C",
+        "--nv-paper": "#FAF7F2",
+        "--nv-night": "#0E1014",
+        "--nv-bg": "#0E1014",
+        "--nv-fg": "#F5F0E6",
+        "--nv-accent": "#C4783A",
+        "--nv-surface": "#1C1F26"
+      }
+    }
+  }
+}

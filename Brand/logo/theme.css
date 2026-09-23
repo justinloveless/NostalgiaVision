@@ -1,0 +1,45 @@
+/* Nostalgia Vision brand theme tokens
+   Source: Brand/logo/theme.json
+*/
+
+.nv-theme-standard {
+  --nv-charcoal: #1c1f26;
+  --nv-cream: #f5f0e6;
+  --nv-amber: #c4783a;
+  --nv-recess: #14161c;
+  --nv-paper: #faf7f2;
+  --nv-night: #0e1014;
+
+  --nv-bg: var(--nv-paper);
+  --nv-fg: var(--nv-charcoal);
+  --nv-accent: var(--nv-amber);
+  --nv-surface: var(--nv-cream);
+}
+
+.nv-theme-swapped {
+  --nv-charcoal: #1c1f26;
+  --nv-cream: #f5f0e6;
+  --nv-amber: #c4783a;
+  --nv-amber-deep: #a8622e;
+  --nv-paper: #faf7f2;
+  --nv-night: #0e1014;
+
+  --nv-bg: var(--nv-paper);
+  --nv-fg: var(--nv-charcoal);
+  --nv-accent: var(--nv-charcoal);
+  --nv-surface: var(--nv-amber);
+}
+
+.nv-theme-dark {
+  --nv-charcoal: #1c1f26;
+  --nv-cream: #f5f0e6;
+  --nv-amber: #c4783a;
+  --nv-recess: #14161c;
+  --nv-paper: #faf7f2;
+  --nv-night: #0e1014;
+
+  --nv-bg: var(--nv-night);
+  --nv-fg: var(--nv-cream);
+  --nv-accent: var(--nv-amber);
+  --nv-surface: var(--nv-charcoal);
+}
