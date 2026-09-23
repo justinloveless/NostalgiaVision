@@ -33,7 +33,7 @@ Reasons:
 
 Focused on composition, typography, color, and scalability, aligned to the reference:
 
-- **Composition** — Full CRT silhouette: rabbit-ear antenna, cream screen with eight amber scan lines, two right-side knobs (larger over smaller), and the bottom recessed control panel (three amber dots + chevron)
+- **Composition** — Full CRT silhouette: rabbit-ear antenna, cream screen with eight amber scan lines, bottom recessed indicator panel (three amber dots + chevron), and two amber knobs at the **bottom-right** of the front panel (like a real TV) — not on the side bezel
 - **Typography** — Rounded geometric sans wordmark in title case; charcoal on light, cream on dark
 - **Color** — Locked palette (see below)
 - **Scalability** — Delivered SVG mark + lockup, plus PNG lockups (light/dark) and mark-only; size proofs at 64 / 128 / 512
