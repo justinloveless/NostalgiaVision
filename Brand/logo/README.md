@@ -35,7 +35,7 @@ Focused on composition, typography, color, scalability, and render quality:
 
 - **Composition** — Full CRT silhouette: rabbit-ear antenna, cream screen with soft amber scan lines, bottom recessed indicator (three amber dots + chevron), and two amber knobs at the **bottom-right** of the front panel (like a real TV) — not on the side bezel
 - **Typography** — Rounded geometric sans wordmark in title case; charcoal on light, cream on dark
-- **Color** — Locked palette (see below), plus an orange/charcoal **swapped** variant
+- **Color** — Locked palette with labeled swatches, plus an orange/charcoal **swapped** variant
 - **Quality** — Primary PNGs are polished illustration renders (soft scan-line glow, anti-aliased edges). SVGs use feathered scan-line gradients for scalable use
 - **Scalability** — Size proofs at 64 / 128 / 512
 
