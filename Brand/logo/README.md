@@ -50,6 +50,18 @@ Focused on composition, typography, color, scalability, and render quality:
 | Paper | `#FAF7F2` | Light background |
 | Night | `#0E1014` | Dark background |
 
+Each logo variant ships with labeled color swatches (name + hex + usage) so the palette can drive the overall app theme.
+
+### Theme packs
+
+| Theme | Board | Machine-readable |
+|-------|-------|------------------|
+| Standard | [`final/theme-standard.png`](final/theme-standard.png) | [`theme.json`](theme.json) → `themes.standard` |
+| Swapped (amber ↔ charcoal) | [`final/theme-swapped.png`](final/theme-swapped.png) | `themes.swapped` |
+| Dark | [`final/theme-dark.png`](final/theme-dark.png) | `themes.dark` |
+
+CSS variables: [`theme.css`](theme.css) (`.nv-theme-standard`, `.nv-theme-swapped`, `.nv-theme-dark`).
+
 ### Swapped variant
 
 Orange ↔ charcoal: amber TV body with charcoal antenna, scan lines, knobs, and panel accents. Cream screen/background unchanged. See `mark-only-swapped.png`, `mark-swapped.svg`, and `lockup-swapped-light.png`.
@@ -66,6 +78,15 @@ Orange ↔ charcoal: amber TV body with charcoal antenna, scan lines, knobs, and
 | [`final/lockup-swapped-light.png`](final/lockup-swapped-light.png) | Light HQ lockup with orange/charcoal swap |
 | [`final/mark-only.png`](final/mark-only.png) | HQ raster mark (preferred preview) |
 | [`final/mark-only-swapped.png`](final/mark-only-swapped.png) | HQ raster mark, orange/charcoal swap |
+| [`final/mark-with-swatches.png`](final/mark-with-swatches.png) | Mark + standard theme swatches |
+| [`final/mark-swapped-with-swatches.png`](final/mark-swapped-with-swatches.png) | Swapped mark + swatches |
+| [`final/lockup-light-with-swatches.png`](final/lockup-light-with-swatches.png) | Light lockup + standard swatches |
+| [`final/lockup-dark-with-swatches.png`](final/lockup-dark-with-swatches.png) | Dark lockup + dark swatches |
+| [`final/lockup-swapped-with-swatches.png`](final/lockup-swapped-with-swatches.png) | Swapped lockup + swatches |
+| [`final/swatches-standard.png`](final/swatches-standard.png) / [`swapped`](final/swatches-swapped.png) / [`dark`](final/swatches-dark.png) | Standalone swatch strips |
+| [`final/theme-standard.png`](final/theme-standard.png) / [`swapped`](final/theme-swapped.png) / [`dark`](final/theme-dark.png) | Full theme boards |
+| [`theme.json`](theme.json) | Theme tokens for app theming |
+| [`theme.css`](theme.css) | CSS custom properties for each theme |
 | [`final/mark-64.png`](final/mark-64.png) / [`128`](final/mark-128.png) / [`512`](final/mark-512.png) | Size proofs |
 | [`final/scalability-sheet.png`](final/scalability-sheet.png) | Side-by-side size comparison |
 | [`reference/user-direction.jpg`](reference/user-direction.jpg) | Stakeholder reference used for refinement |
@@ -73,6 +94,7 @@ Orange ↔ charcoal: amber TV body with charcoal antenna, scan lines, knobs, and
 ## Usage notes
 
 - Prefer HQ PNG lockups/mark for marketing previews; use SVG for app icons and crisp scaling
+- Reuse hex tokens from the swatch sheets / `theme.json` / `theme.css` for UI chrome so the product matches the logo
 - Keep amber accents on antenna, scan lines, knobs, and the bottom panel only (or the inverse in the swapped variant)
 - Do not add neon glow, extra badges, or side-mounted knobs
 - Wordmark may sit below the mark (centered) or to the right for horizontal layouts
