@@ -1,6 +1,6 @@
 /* Nostalgia Vision brand theme tokens
    Source: Brand/logo/theme.json
-   Apply `.nv-theme-standard`, `.nv-theme-swapped`, or `.nv-theme-dark` on :root or a wrapper. */
+*/
 
 .nv-theme-standard {
   --nv-charcoal: #1c1f26;
