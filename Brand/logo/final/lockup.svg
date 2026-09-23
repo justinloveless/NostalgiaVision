@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-labelledby="title desc">
+  <title id="title">Nostalgia Vision logo</title>
+  <desc id="desc">Retro broadcast CRT mark with Nostalgia Vision wordmark</desc>
+  <defs>
+    <style>
+      .charcoal { fill: #1C1F26; }
+      .cream { fill: #F5F0E6; }
+      .amber { fill: #C4783A; stroke: #C4783A; }
+      .wordmark {
+        fill: #1C1F26;
+        font-family: "Avenir Next", "Nunito", "Segoe UI", "Helvetica Neue", sans-serif;
+        font-size: 36px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+    </style>
+  </defs>
+
+  <!-- Mark (centered) -->
+  <g transform="translate(120 18)">
+    <g class="amber" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="120" cy="42" r="5" fill="#C4783A"/>
+      <line x1="120" y1="42" x2="78" y2="14" stroke-width="5"/>
+      <line x1="120" y1="42" x2="162" y2="14" stroke-width="5"/>
+    </g>
+    <rect class="charcoal" x="48" y="48" width="144" height="144" rx="28" ry="28"/>
+    <rect class="cream" x="64" y="64" width="96" height="96" rx="14" ry="14"/>
+    <g stroke="#C4783A" stroke-width="4" stroke-linecap="round">
+      <line x1="76" y1="80" x2="148" y2="80"/>
+      <line x1="76" y1="94" x2="148" y2="94"/>
+      <line x1="76" y1="108" x2="148" y2="108"/>
+      <line x1="76" y1="122" x2="148" y2="122"/>
+      <line x1="76" y1="136" x2="148" y2="136"/>
+      <line x1="76" y1="150" x2="148" y2="150"/>
+    </g>
+    <circle cx="178" cy="88" r="8" fill="#C4783A"/>
+    <circle cx="178" cy="116" r="6" fill="#C4783A"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text class="wordmark" x="240" y="300" text-anchor="middle">Nostalgia Vision</text>
+</svg>
