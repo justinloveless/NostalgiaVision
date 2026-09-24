@@ -28,7 +28,7 @@ extension PictureEffects {
 struct SetupBackdrop: View {
     var body: some View {
         RadialGradient(
-            colors: [Color(red: 0.05, green: 0.06, blue: 0.10), Color.black],
+            colors: [AppTheme.night, Color.black],
             center: .center,
             startRadius: 0,
             endRadius: 1200
