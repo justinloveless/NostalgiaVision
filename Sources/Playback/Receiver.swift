@@ -33,7 +33,8 @@ final class Receiver: NSObject {
     @ObservationIgnored private var attempt = 0
 
     /// No channel is tuned yet at launch; `KSPlayerLayer` needs some URL to exist, but
-    /// `isAutoPlay: false` means it is never asked to load it.
+    /// `isAutoPlay: false` means it is never asked to load it. `park()` returns the layer here, so
+    /// "nothing is tuned" is one state rather than two.
     private static let noChannelURL = URL(string: "about:blank")!
 
     override init() {
@@ -73,7 +74,7 @@ final class Receiver: NSObject {
         channel = nil
         attempt = 0
         reception = .acquiring
-        playerLayer.stop()
+        park()
     }
 
     /// Re-attempts the current channel from scratch.
@@ -83,9 +84,33 @@ final class Receiver: NSObject {
         attempt += 1
         snowStartedAt = .now
         reception = .acquiring
+        park()
         playerLayer.set(url: channel.stream, options: KSOptions())
         playerLayer.play()
         scheduleStallCheck()
+    }
+
+    /// Shuts the decoder down and returns the layer to its launch state, so that whatever is tuned
+    /// next is loaded for real.
+    ///
+    /// Parking on the sentinel, rather than calling `playerLayer.stop()` and leaving it there, is
+    /// the whole point. `stop()` shuts the decoder down for good — `MEPlayerItem.shutdown()` closes
+    /// the format context and latches `state = .closed` — yet leaves `playerLayer.url` still
+    /// naming the channel just released. `KSPlayerLayer` skips `player.replace(url:)` whenever the
+    /// URL handed to it equals the one it already holds, and only `replace(url:)` builds a fresh
+    /// item, so handing that same channel straight back reuses the dead one and no stream ever
+    /// opens. Moving the layer's URL off the channel first makes the next `set(url:)` a real change
+    /// and therefore a real reload.
+    ///
+    /// `KSMEPlayer` is why this bites at all: its `prepareToPlay()` reuses the existing item, where
+    /// `KSAVPlayer` builds a new one each time and quietly self-heals.
+    ///
+    /// `pause()` first is load-bearing, not tidiness: it clears the layer's `isAutoPlay`, without
+    /// which the sentinel URL is itself prepared for playback and fails, reporting a spurious lost
+    /// signal on the channel we are about to tune.
+    private func park() {
+        playerLayer.pause()
+        playerLayer.set(url: Self.noChannelURL, options: KSOptions())
     }
 
     private func handle(_ state: KSPlayerState) {
