@@ -27,6 +27,11 @@ struct PictureEffectsStage<Content: View>: View {
         }
     }
 
+    /// Six of the seven overlays take `.equatable()` because their inputs are settings rather than
+    /// the clock. With noise on, this whole `ZStack` is rebuilt 24 times a second, and the memo is
+    /// what keeps each tick from re-running six `Canvas` closures to paint identical pixels
+    /// (curvature and bevel alone are ~100 fills plus blur filters). `SignalNoiseOverlay` is left
+    /// out on purpose. Its `seed` changes every tick, so redrawing it is the whole point.
     private func stage(noiseSeed: UInt64, jitterSeed: UInt64) -> some View {
         let jitter = Self.jitterOffset(amount: effects.signalNoise.amount, seed: jitterSeed)
 
@@ -36,11 +41,11 @@ struct PictureEffectsStage<Content: View>: View {
                 .scaleEffect(effects.curvature.isEnabled ? 1.0 + 0.02 * effects.curvature.amount.value : 1)
 
             if effects.chromaticAberration.isEnabled {
-                ChromaticAberrationOverlay(amount: effects.chromaticAberration.amount)
+                ChromaticAberrationOverlay(amount: effects.chromaticAberration.amount).equatable()
             }
 
             if effects.scanLines.isEnabled {
-                ScanLinesOverlay(amount: effects.scanLines.amount)
+                ScanLinesOverlay(amount: effects.scanLines.amount).equatable()
             }
 
             if effects.signalNoise.isEnabled {
@@ -48,19 +53,20 @@ struct PictureEffectsStage<Content: View>: View {
             }
 
             if effects.glowBloom.isEnabled {
-                GlowBloomOverlay(amount: effects.glowBloom.amount)
+                GlowBloomOverlay(amount: effects.glowBloom.amount).equatable()
             }
 
             if effects.vignette.isEnabled {
-                VignetteOverlay(amount: effects.vignette.amount)
+                VignetteOverlay(amount: effects.vignette.amount).equatable()
             }
 
             if effects.curvature.isEnabled {
-                CurvatureMaskOverlay(amount: effects.curvature.amount)
+                CurvatureMaskOverlay(amount: effects.curvature.amount).equatable()
             }
 
             if effects.bevel.isEnabled {
                 BevelOverlay(amount: effects.bevel.amount, curvatureAmount: effects.curvature.amount)
+                    .equatable()
             }
         }
     }
@@ -85,7 +91,7 @@ struct PictureEffectsStage<Content: View>: View {
 
 // MARK: - Overlays
 
-private struct VignetteOverlay: View {
+private struct VignetteOverlay: View, Equatable {
     let amount: EffectAmount
 
     var body: some View {
@@ -106,7 +112,7 @@ private struct VignetteOverlay: View {
     }
 }
 
-private struct ScanLinesOverlay: View {
+private struct ScanLinesOverlay: View, Equatable {
     let amount: EffectAmount
 
     var body: some View {
@@ -130,7 +136,7 @@ private struct ScanLinesOverlay: View {
 }
 
 /// RGB fringe at the tube edges — sells chromatic aberration without sampling the player texture.
-private struct ChromaticAberrationOverlay: View {
+private struct ChromaticAberrationOverlay: View, Equatable {
     let amount: EffectAmount
 
     var body: some View {
@@ -160,7 +166,7 @@ private struct ChromaticAberrationOverlay: View {
 }
 
 /// Soft phosphor haze: a cool-white centre bloom plus a faint green tube glow at the rim.
-private struct GlowBloomOverlay: View {
+private struct GlowBloomOverlay: View, Equatable {
     let amount: EffectAmount
 
     var body: some View {
@@ -196,7 +202,7 @@ private struct GlowBloomOverlay: View {
 /// Sells a curved piece of glass rather than a rounded corner crop: the tube's boundary is a
 /// pillow/cushion shape (edges bow inward at their midpoint, not just the corners), with a blurred
 /// dark rim where the glass reads thickest and a specular sweep where it catches the light.
-private struct CurvatureMaskOverlay: View {
+private struct CurvatureMaskOverlay: View, Equatable {
     let amount: EffectAmount
 
     var body: some View {
@@ -291,7 +297,7 @@ func cabinetInsets(bevel: PictureEffect) -> EdgeInsets {
 
 /// An opaque cabinet painted over the outer band of the canvas with a cushion-shaped hole the
 /// picture shows through. Nothing is warped or resized; the set is simply in front of the tube.
-private struct BevelOverlay: View {
+private struct BevelOverlay: View, Equatable {
     let amount: EffectAmount
     /// The hole reuses the curvature knob's own cushion geometry, so the two never compose into a
     /// straight cabinet edge crossing a bowed tube edge.
@@ -396,33 +402,87 @@ private struct BevelOverlay: View {
     }
 }
 
+/// A short reel of pre-rendered static, cycled rather than regenerated.
+///
+/// One frame costs a ~300k-iteration scalar loop plus a `CGImage` allocation. Paying that per tick
+/// meant paying it 24 times a second for as long as NOISE is on, which on an Apple TV was enough to
+/// make even the settings menu lag with every other effect switched off. Generating the reel once
+/// and indexing into it leaves each tick with an array subscript and a blit.
+private final class NoiseFramePool {
+    /// Enough that the loop never resolves as a loop. Each frame is an independent random field
+    /// over ~300k cells, so the eye has no landmark to latch onto and clock a repeat against; what
+    /// reads as "static" is the per-frame churn, not the sequence.
+    static let frameCount = 16
+
+    /// Everything a frame's pixels depend on. The grid can change with the view's aspect, and the
+    /// viewer can step the NOISE detent while the reel is on screen, so both invalidate the cache.
+    private struct Shape: Equatable {
+        let columns: Int
+        let rows: Int
+        let amount: EffectAmount
+    }
+
+    private var cached: (shape: Shape, frames: [CGImage])?
+    /// `Canvas(rendersAsynchronously: true)` can rasterize off the main thread, and a stale draw in
+    /// flight can overlap a fresh one. Unlike the old per-tick-local buffer, `cached` is now state
+    /// shared across ticks, so the read-check-generate-write below needs to be one atomic step.
+    private let lock = NSLock()
+
+    func frames(columns: Int, rows: Int, amount: EffectAmount) -> [CGImage] {
+        let shape = Shape(columns: columns, rows: rows, amount: amount)
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached, cached.shape == shape { return cached.frames }
+        let frames = (0..<Self.frameCount).compactMap {
+            Self.render(shape: shape, seed: UInt64($0 * 2 + 1))
+        }
+        cached = (shape, frames)
+        return frames
+    }
+
+    private static func render(shape: Shape, seed: UInt64) -> CGImage? {
+        let alphaByte = UInt8(clamping: Int(((0.04 + 0.14 * shape.amount.value) * 255).rounded()))
+
+        var s = seed | 1
+        var pixels = [UInt8](repeating: 0, count: shape.columns * shape.rows * 4)
+        for i in 0..<(shape.columns * shape.rows) {
+            s = s &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            // Sparse: only light a fraction of cells so the picture stays readable.
+            guard ((s >> 8) & 0x7) == 0 else { continue }
+            let level = UInt8((s >> 33) & 0xFF)
+            let premultiplied = UInt8((UInt16(level) * UInt16(alphaByte)) / 255)
+            let base = i * 4
+            pixels[base] = premultiplied
+            pixels[base + 1] = premultiplied
+            pixels[base + 2] = premultiplied
+            pixels[base + 3] = alphaByte
+        }
+
+        return imageFromPremultipliedRGBA(pixels, columns: shape.columns, rows: shape.rows)
+    }
+}
+
 private struct SignalNoiseOverlay: View {
     let amount: EffectAmount
     let seed: UInt64
 
+    /// A plain class rather than `@Observable` or a `@State` array of images, because the reel is
+    /// filled from inside the `Canvas` draw closure. A mutation SwiftUI could observe from there
+    /// would invalidate the view mid-draw and schedule a redraw of pixels that did not change. The
+    /// `TimelineView`'s `seed` is the only thing that should drive this view.
+    @State private var pool = NoiseFramePool()
+
     var body: some View {
         Canvas(opaque: false, rendersAsynchronously: true) { canvas, size in
             guard size.width > 0, size.height > 0 else { return }
-            let rows = analogNoiseLines
-            let columns = analogNoiseColumns(aspect: size.width / size.height)
-            let alphaByte = UInt8(clamping: Int(((0.04 + 0.14 * amount.value) * 255).rounded()))
+            let frames = pool.frames(
+                columns: analogNoiseColumns(aspect: size.width / size.height),
+                rows: analogNoiseLines,
+                amount: amount
+            )
+            guard !frames.isEmpty else { return }
 
-            var s = seed | 1
-            var pixels = [UInt8](repeating: 0, count: columns * rows * 4)
-            for i in 0..<(columns * rows) {
-                s = s &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-                // Sparse: only light a fraction of cells so the picture stays readable.
-                guard ((s >> 8) & 0x7) == 0 else { continue }
-                let level = UInt8((s >> 33) & 0xFF)
-                let premultiplied = UInt8((UInt16(level) * UInt16(alphaByte)) / 255)
-                let base = i * 4
-                pixels[base] = premultiplied
-                pixels[base + 1] = premultiplied
-                pixels[base + 2] = premultiplied
-                pixels[base + 3] = alphaByte
-            }
-
-            guard let image = imageFromPremultipliedRGBA(pixels, columns: columns, rows: rows) else { return }
+            let image = frames[Int(seed % UInt64(frames.count))]
             let swiftUIImage = Image(decorative: image, scale: 1, orientation: .up).interpolation(.none)
             canvas.draw(swiftUIImage, in: CGRect(origin: .zero, size: size))
         }
